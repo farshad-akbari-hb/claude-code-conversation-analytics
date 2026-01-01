@@ -1,4 +1,4 @@
-import Database, { Database as DatabaseType } from 'better-sqlite3';
+import Database, { Database as DatabaseType, Statement } from 'better-sqlite3';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -7,14 +7,14 @@ import { BufferedEntry, ClaudeEntry } from './types';
 export class Buffer {
   private db: DatabaseType;
   private statements: {
-    getPosition: ReturnType<DatabaseType['prepare']>;
-    upsertPosition: ReturnType<DatabaseType['prepare']>;
-    insertEntry: ReturnType<DatabaseType['prepare']>;
-    getPending: ReturnType<DatabaseType['prepare']>;
-    markSynced: ReturnType<DatabaseType['prepare']>;
-    cleanupSynced: ReturnType<DatabaseType['prepare']>;
-    countPending: ReturnType<DatabaseType['prepare']>;
-    countSynced: ReturnType<DatabaseType['prepare']>;
+    getPosition: Statement<[string]>;
+    upsertPosition: Statement<[string, number]>;
+    insertEntry: Statement<[string, string | null, string, string]>;
+    getPending: Statement<[number]>;
+    markSynced: Statement<[number]>;
+    cleanupSynced: Statement<[]>;
+    countPending: Statement<[]>;
+    countSynced: Statement<[]>;
   };
 
   constructor(dbPath?: string) {

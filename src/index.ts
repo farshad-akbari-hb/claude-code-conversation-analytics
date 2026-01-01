@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import path from 'path';
 import os from 'os';
 import http from 'http';
@@ -5,12 +6,19 @@ import { Buffer } from './buffer';
 import { Watcher } from './watcher';
 import { MongoSync } from './sync';
 
+function expandTilde(filePath: string): string {
+  if (filePath.startsWith('~/')) {
+    return path.join(os.homedir(), filePath.slice(2));
+  }
+  return filePath;
+}
+
 // Configuration from environment
 const config = {
-  claudeDir: process.env.CLAUDE_DIR || path.join(os.homedir(), '.claude', 'projects'),
+  claudeDir: expandTilde(process.env.CLAUDE_DIR || path.join(os.homedir(), '.claude', 'projects')),
   mongoUri: process.env.MONGO_URI || 'mongodb://localhost:27017',
   dbName: process.env.MONGO_DB || 'claude_logs',
-  sqlitePath: process.env.SQLITE_PATH || path.join(os.homedir(), '.claude-sync', 'buffer.db'),
+  sqlitePath: expandTilde(process.env.SQLITE_PATH || path.join(os.homedir(), '.claude-sync', 'buffer.db')),
   syncIntervalMs: parseInt(process.env.SYNC_INTERVAL_MS || '5000', 10),
   batchSize: parseInt(process.env.BATCH_SIZE || '100', 10),
   cleanupIntervalMs: parseInt(process.env.CLEANUP_INTERVAL_MS || '3600000', 10), // 1 hour

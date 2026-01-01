@@ -52,6 +52,13 @@ When MongoDB is unavailable, entries accumulate in SQLite. The `MongoSync.sync()
 
 ## Configuration
 
+Copy `.env.example` to `.env` and configure:
+
+```bash
+cp .env.example .env
+# Edit .env with your MongoDB credentials
+```
+
 Environment variables (see `src/index.ts` config object):
 
 | Variable | Default | Purpose |
