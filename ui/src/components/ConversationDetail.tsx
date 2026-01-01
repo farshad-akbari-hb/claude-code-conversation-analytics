@@ -1,7 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import { format } from 'date-fns';
-import { X, FileText, Code, Clock, Folder, Hash } from 'lucide-react';
+import { X, FileText, Code, Clock, Folder, Hash, Copy, Check } from 'lucide-react';
 
 import { Conversation } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -12,7 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 
 interface ConversationDetailProps {
@@ -21,6 +22,26 @@ interface ConversationDetailProps {
 }
 
 export function ConversationDetail({ conversation, onClose }: ConversationDetailProps) {
+  const [copiedMessage, setCopiedMessage] = useState(false);
+  const [copiedJson, setCopiedJson] = useState(false);
+
+  const copyToClipboard = async (text: string, type: 'message' | 'json') => {
+    await navigator.clipboard.writeText(text);
+    if (type === 'message') {
+      setCopiedMessage(true);
+      setTimeout(() => setCopiedMessage(false), 2000);
+    } else {
+      setCopiedJson(true);
+      setTimeout(() => setCopiedJson(false), 2000);
+    }
+  };
+
+  const getMessageContent = () => {
+    return typeof conversation.message === 'string'
+      ? conversation.message
+      : JSON.stringify(conversation.message, null, 2);
+  };
+
   return (
     <Card className="sticky top-4">
       <CardHeader className="pb-3">
@@ -88,15 +109,28 @@ export function ConversationDetail({ conversation, onClose }: ConversationDetail
 
         {/* Message Content */}
         <div>
-          <h4 className="text-sm font-medium mb-2">Message Content</h4>
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-sm font-medium">Message Content</h4>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => copyToClipboard(getMessageContent(), 'message')}
+            >
+              {copiedMessage ? (
+                <Check className="h-3.5 w-3.5 text-green-500" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </div>
           <ScrollArea className="h-[300px]">
-            <div className="bg-muted rounded-md p-3">
-              <pre className="text-xs whitespace-pre-wrap break-words font-mono">
-                {typeof conversation.message === 'string'
-                  ? conversation.message
-                  : JSON.stringify(conversation.message, null, 2)}
+            <div className="bg-muted rounded-md p-3 min-w-0">
+              <pre className="text-xs whitespace-pre-wrap break-words font-mono overflow-x-auto">
+                {getMessageContent()}
               </pre>
             </div>
+            <ScrollBar orientation="horizontal" />
           </ScrollArea>
         </div>
 
@@ -104,16 +138,34 @@ export function ConversationDetail({ conversation, onClose }: ConversationDetail
 
         {/* Raw JSON */}
         <details className="group">
-          <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground flex items-center gap-2">
-            <Code className="h-4 w-4" />
-            View Raw JSON
+          <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <Code className="h-4 w-4" />
+              View Raw JSON
+            </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={(e) => {
+                e.preventDefault();
+                copyToClipboard(JSON.stringify(conversation, null, 2), 'json');
+              }}
+            >
+              {copiedJson ? (
+                <Check className="h-3.5 w-3.5 text-green-500" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+            </Button>
           </summary>
           <ScrollArea className="h-[200px] mt-2">
-            <div className="bg-zinc-900 text-zinc-100 rounded-md p-3">
-              <pre className="text-xs font-mono">
+            <div className="bg-zinc-900 text-zinc-100 rounded-md p-3 min-w-0">
+              <pre className="text-xs font-mono whitespace-pre-wrap break-words overflow-x-auto">
                 {JSON.stringify(conversation, null, 2)}
               </pre>
             </div>
+            <ScrollBar orientation="horizontal" />
           </ScrollArea>
         </details>
       </CardContent>
