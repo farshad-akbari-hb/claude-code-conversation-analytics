@@ -41,3 +41,31 @@ export interface FilterParams {
   limit?: number;
   sortOrder?: SortOrder;
 }
+
+// Chart types
+export type TimeGranularity = 'hour' | 'day' | 'week';
+
+export interface ChartDataPoint {
+  period: string;
+  periodStart: string;
+  user: number;
+  assistant: number;
+}
+
+export interface StatsResponse {
+  data: ChartDataPoint[];
+  meta: {
+    granularity: TimeGranularity;
+    periodCount: number;
+    totalMessages: number;
+  };
+}
+
+export interface StatsParams {
+  projectId: string;
+  sessionId?: string;
+  startDate?: string;
+  endDate?: string;
+  granularity: TimeGranularity;
+  periodCount: number;
+}

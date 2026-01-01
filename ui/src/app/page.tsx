@@ -6,6 +6,7 @@ import { Loader2, MessageSquareText } from 'lucide-react';
 
 import { FilterPanel } from '@/components/FilterPanel';
 import { ConversationList } from '@/components/ConversationList';
+import { SessionChart } from '@/components/SessionChart';
 import { useConversations } from '@/hooks/useConversations';
 import { Conversation, SortOrder } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
@@ -55,6 +56,13 @@ function ConversationViewer() {
   return (
     <>
       <FilterPanel onExport={handleExport} />
+
+      <SessionChart
+        projectId={projectId}
+        sessionId={sessionId}
+        startDate={startDate}
+        endDate={endDate}
+      />
 
       {isLoading && projectId ? (
         <Card>
