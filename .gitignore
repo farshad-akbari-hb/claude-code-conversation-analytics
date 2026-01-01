@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# SQLite buffer (runtime data)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Claude local settings
+.claude/

@@ -1,0 +1,44 @@
+[Unit]
+Description=Claude Code MongoDB Sync Service
+Documentation=https://github.com/your-repo/claude-mongo-sync
+After=network.target mongodb.service
+Wants=mongodb.service
+
+[Service]
+Type=simple
+User=%i
+Group=%i
+WorkingDirectory=/opt/claude-mongo-sync
+
+# Environment
+Environment=NODE_ENV=production
+EnvironmentFile=-/opt/claude-mongo-sync/.env
+
+# Start command
+ExecStart=/usr/bin/node /opt/claude-mongo-sync/dist/index.js
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Graceful shutdown
+TimeoutStopSec=30
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/%i/.claude-sync
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=claude-mongo-sync
+
+[Install]
+WantedBy=multi-user.target
