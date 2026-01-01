@@ -106,12 +106,12 @@ export async function GET(request: NextRequest) {
     }
 
     if (startDate || endDate) {
-      matchStage.ingestedAt = {};
+      matchStage.timestamp = {};
       if (startDate) {
-        matchStage.ingestedAt.$gte = new Date(startDate);
+        matchStage.timestamp.$gte = startDate;
       }
       if (endDate) {
-        matchStage.ingestedAt.$lte = new Date(endDate);
+        matchStage.timestamp.$lte = endDate + 'T23:59:59.999Z';
       }
     }
 
@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
       {
         $group: {
           _id: {
-            period: { $dateToString: { format: dateFormat, date: '$ingestedAt' } },
+            period: { $dateToString: { format: dateFormat, date: { $toDate: '$timestamp' } } },
             type: '$type',
           },
           count: { $sum: 1 },
