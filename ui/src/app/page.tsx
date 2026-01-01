@@ -2,10 +2,13 @@
 
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
+import { Loader2, MessageSquareText } from 'lucide-react';
+
 import { FilterPanel } from '@/components/FilterPanel';
 import { ConversationList } from '@/components/ConversationList';
 import { useConversations } from '@/hooks/useConversations';
 import { Conversation } from '@/lib/types';
+import { Card, CardContent } from '@/components/ui/card';
 
 function ConversationViewer() {
   const searchParams = useSearchParams();
@@ -45,7 +48,11 @@ function ConversationViewer() {
       <FilterPanel onExport={handleExport} />
 
       {isLoading && projectId ? (
-        <div className="text-center py-12 text-gray-500">Loading...</div>
+        <Card>
+          <CardContent className="flex items-center justify-center py-16">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </CardContent>
+        </Card>
       ) : (
         <ConversationList
           conversations={conversations}
@@ -61,19 +68,32 @@ function ConversationViewer() {
 
 export default function Home() {
   return (
-    <main className="container mx-auto px-4 py-8">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">
-          Claude Conversation Viewer
-        </h1>
-        <p className="text-gray-600 mt-1">
-          Browse and search Claude Code conversation logs stored in MongoDB
-        </p>
-      </header>
+    <main className="min-h-screen bg-background">
+      <div className="container mx-auto px-4 py-8">
+        <header className="mb-8">
+          <div className="flex items-center gap-3 mb-2">
+            <MessageSquareText className="h-8 w-8 text-primary" />
+            <h1 className="text-3xl font-bold tracking-tight">
+              Claude Conversation Viewer
+            </h1>
+          </div>
+          <p className="text-muted-foreground">
+            Browse and search Claude Code conversation logs stored in MongoDB
+          </p>
+        </header>
 
-      <Suspense fallback={<div>Loading...</div>}>
-        <ConversationViewer />
-      </Suspense>
+        <Suspense
+          fallback={
+            <Card>
+              <CardContent className="flex items-center justify-center py-16">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </CardContent>
+            </Card>
+          }
+        >
+          <ConversationViewer />
+        </Suspense>
+      </div>
     </main>
   );
 }

@@ -2,6 +2,26 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { format } from 'date-fns';
+import { CalendarIcon, Download, Search } from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Calendar } from '@/components/ui/calendar';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Card, CardContent } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
 interface FilterPanelProps {
   onExport: () => void;
@@ -47,7 +67,6 @@ export function FilterPanel({ onExport }: FilterPanelProps) {
     } else {
       params.delete(key);
     }
-    // Reset session when project changes
     if (key === 'projectId') {
       params.delete('sessionId');
     }
@@ -62,99 +81,164 @@ export function FilterPanel({ onExport }: FilterPanelProps) {
     return () => clearTimeout(timer);
   }, [search]);
 
+  // Extract display name from project path (last segment)
+  const getProjectDisplayName = (path: string) => {
+    const segments = path.split('-');
+    // Return last 2-3 meaningful segments
+    return segments.slice(-3).join('-');
+  };
+
   return (
-    <div className="bg-gray-50 p-4 rounded-lg mb-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        {/* Project Filter */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Project *
-          </label>
-          <select
-            value={projectId}
-            onChange={(e) => updateFilter('projectId', e.target.value)}
-            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"
-          >
-            <option value="">Select a project</option>
-            {projects.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
+    <Card className="mb-6">
+      <CardContent className="pt-6 space-y-4">
+        {/* Row 1: Project & Session (wide fields) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Project Filter */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Project *</label>
+            <Select
+              value={projectId}
+              onValueChange={(value) => updateFilter('projectId', value)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select project" />
+              </SelectTrigger>
+              <SelectContent>
+                {projects.map((p) => (
+                  <SelectItem key={p} value={p} className="max-w-[500px]">
+                    <span className="truncate block" title={p}>
+                      {getProjectDisplayName(p)}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {projectId && (
+              <p className="text-xs text-muted-foreground truncate" title={projectId}>
+                {projectId}
+              </p>
+            )}
+          </div>
+
+          {/* Session Filter */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Session</label>
+            <Select
+              value={sessionId || '__all__'}
+              onValueChange={(value) => updateFilter('sessionId', value === '__all__' ? '' : value)}
+              disabled={!projectId}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="All sessions" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All sessions</SelectItem>
+                {sessions.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    <code className="text-xs">{s}</code>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {sessionId && (
+              <p className="text-xs text-muted-foreground font-mono">{sessionId}</p>
+            )}
+          </div>
         </div>
 
-        {/* Session Filter */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Session
-          </label>
-          <select
-            value={sessionId}
-            onChange={(e) => updateFilter('sessionId', e.target.value)}
-            disabled={!projectId}
-            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border disabled:bg-gray-100"
-          >
-            <option value="">All sessions</option>
-            {sessions.map((s) => (
-              <option key={s} value={s}>
-                {s.slice(0, 8)}...
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Row 2: Date Range, Search & Export */}
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          {/* Start Date */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Start Date</label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    'w-full justify-start text-left font-normal',
+                    !startDate && 'text-muted-foreground'
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                  <span className="truncate">
+                    {startDate ? format(new Date(startDate), 'MMM d, yyyy') : 'Pick date'}
+                  </span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={startDate ? new Date(startDate) : undefined}
+                  onSelect={(date) =>
+                    updateFilter('startDate', date ? format(date, 'yyyy-MM-dd') : '')
+                  }
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
 
-        {/* Start Date */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Start Date
-          </label>
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => updateFilter('startDate', e.target.value)}
-            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"
-          />
-        </div>
+          {/* End Date */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">End Date</label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    'w-full justify-start text-left font-normal',
+                    !endDate && 'text-muted-foreground'
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                  <span className="truncate">
+                    {endDate ? format(new Date(endDate), 'MMM d, yyyy') : 'Pick date'}
+                  </span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={endDate ? new Date(endDate) : undefined}
+                  onSelect={(date) =>
+                    updateFilter('endDate', date ? format(date, 'yyyy-MM-dd') : '')
+                  }
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
 
-        {/* End Date */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            End Date
-          </label>
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => updateFilter('endDate', e.target.value)}
-            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"
-          />
-        </div>
+          {/* Search */}
+          <div className="space-y-2 col-span-2 md:col-span-1 lg:col-span-2">
+            <label className="text-sm font-medium">Search</label>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search messages..."
+                className="pl-8"
+              />
+            </div>
+          </div>
 
-        {/* Search */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Search
-          </label>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search messages..."
-            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"
-          />
+          {/* Export Button */}
+          <div className="space-y-2 col-span-2 md:col-span-1">
+            <label className="text-sm font-medium invisible hidden md:block">Export</label>
+            <Button
+              onClick={onExport}
+              disabled={!projectId}
+              className="w-full"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Export JSON
+            </Button>
+          </div>
         </div>
-
-        {/* Export Button */}
-        <div className="flex items-end">
-          <button
-            onClick={onExport}
-            disabled={!projectId}
-            className="w-full bg-blue-600 text-white rounded-md py-2 px-4 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-          >
-            Export JSON
-          </button>
-        </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

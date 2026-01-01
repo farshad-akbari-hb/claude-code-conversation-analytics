@@ -1,7 +1,19 @@
 'use client';
 
 import { format } from 'date-fns';
+import { X, FileText, Code, Clock, Folder, Hash } from 'lucide-react';
+
 import { Conversation } from '@/lib/types';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 
 interface ConversationDetailProps {
   conversation: Conversation;
@@ -10,78 +22,101 @@ interface ConversationDetailProps {
 
 export function ConversationDetail({ conversation, onClose }: ConversationDetailProps) {
   return (
-    <div className="bg-white rounded-lg shadow p-4 sticky top-4">
-      <div className="flex justify-between items-start mb-4">
-        <h3 className="text-lg font-semibold">Conversation Details</h3>
-        <button
-          onClick={onClose}
-          className="text-gray-400 hover:text-gray-600"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
-      {/* Metadata */}
-      <div className="space-y-2 mb-4 text-sm">
-        <div className="flex">
-          <span className="font-medium w-24 text-gray-600">Type:</span>
-          <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
-            {conversation.type}
-          </span>
+    <Card className="sticky top-4">
+      <CardHeader className="pb-3">
+        <div className="flex justify-between items-start">
+          <CardTitle className="text-lg">Conversation Details</CardTitle>
+          <Button variant="ghost" size="icon" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
         </div>
-        <div className="flex">
-          <span className="font-medium w-24 text-gray-600">Project:</span>
-          <span>{conversation.projectId}</span>
-        </div>
-        {conversation.sessionId && (
-          <div className="flex">
-            <span className="font-medium w-24 text-gray-600">Session:</span>
-            <span className="font-mono text-xs">{conversation.sessionId}</span>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Metadata */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Hash className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground w-20">Type</span>
+            <Badge>{conversation.type}</Badge>
           </div>
-        )}
-        <div className="flex">
-          <span className="font-medium w-24 text-gray-600">Ingested:</span>
-          <span>{format(new Date(conversation.ingestedAt), 'MMM d, yyyy HH:mm:ss')}</span>
-        </div>
-        {conversation.timestamp && (
-          <div className="flex">
-            <span className="font-medium w-24 text-gray-600">Timestamp:</span>
-            <span>{conversation.timestamp}</span>
+
+          <div className="flex items-center gap-2">
+            <Folder className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground w-20">Project</span>
+            <span className="text-sm font-medium">{conversation.projectId}</span>
           </div>
-        )}
-        <div className="flex">
-          <span className="font-medium w-24 text-gray-600">Source:</span>
-          <span className="text-xs truncate max-w-xs" title={conversation.sourceFile}>
-            {conversation.sourceFile.split('/').pop()}
-          </span>
-        </div>
-      </div>
 
-      {/* Message Content */}
-      <div>
-        <h4 className="font-medium text-gray-600 mb-2">Message Content</h4>
-        <div className="bg-gray-50 rounded p-3 max-h-96 overflow-auto">
-          <pre className="text-xs whitespace-pre-wrap break-words">
-            {typeof conversation.message === 'string'
-              ? conversation.message
-              : JSON.stringify(conversation.message, null, 2)}
-          </pre>
-        </div>
-      </div>
+          {conversation.sessionId && (
+            <div className="flex items-center gap-2">
+              <Code className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground w-20">Session</span>
+              <code className="text-xs bg-muted px-2 py-0.5 rounded">
+                {conversation.sessionId}
+              </code>
+            </div>
+          )}
 
-      {/* Raw JSON */}
-      <details className="mt-4">
-        <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700">
-          View Raw JSON
-        </summary>
-        <div className="mt-2 bg-gray-900 text-gray-100 rounded p-3 max-h-64 overflow-auto">
-          <pre className="text-xs">
-            {JSON.stringify(conversation, null, 2)}
-          </pre>
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground w-20">Ingested</span>
+            <span className="text-sm">
+              {format(new Date(conversation.ingestedAt), 'MMM d, yyyy HH:mm:ss')}
+            </span>
+          </div>
+
+          {conversation.timestamp && (
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground w-20">Timestamp</span>
+              <span className="text-sm">{conversation.timestamp}</span>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground w-20">Source</span>
+            <span
+              className="text-xs truncate max-w-[200px]"
+              title={conversation.sourceFile}
+            >
+              {conversation.sourceFile.split('/').pop()}
+            </span>
+          </div>
         </div>
-      </details>
-    </div>
+
+        <Separator />
+
+        {/* Message Content */}
+        <div>
+          <h4 className="text-sm font-medium mb-2">Message Content</h4>
+          <ScrollArea className="h-[300px]">
+            <div className="bg-muted rounded-md p-3">
+              <pre className="text-xs whitespace-pre-wrap break-words font-mono">
+                {typeof conversation.message === 'string'
+                  ? conversation.message
+                  : JSON.stringify(conversation.message, null, 2)}
+              </pre>
+            </div>
+          </ScrollArea>
+        </div>
+
+        <Separator />
+
+        {/* Raw JSON */}
+        <details className="group">
+          <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground flex items-center gap-2">
+            <Code className="h-4 w-4" />
+            View Raw JSON
+          </summary>
+          <ScrollArea className="h-[200px] mt-2">
+            <div className="bg-zinc-900 text-zinc-100 rounded-md p-3">
+              <pre className="text-xs font-mono">
+                {JSON.stringify(conversation, null, 2)}
+              </pre>
+            </div>
+          </ScrollArea>
+        </details>
+      </CardContent>
+    </Card>
   );
 }
