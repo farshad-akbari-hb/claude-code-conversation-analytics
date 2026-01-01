@@ -29,6 +29,8 @@ export interface SessionsResponse {
   sessions: string[];
 }
 
+export type SortOrder = 'asc' | 'desc';
+
 export interface FilterParams {
   projectId: string;
   sessionId?: string;
@@ -37,4 +39,5 @@ export interface FilterParams {
   endDate?: string;
   cursor?: string;
   limit?: number;
+  sortOrder?: SortOrder;
 }

@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { format } from 'date-fns';
-import { Loader2, MessageSquare } from 'lucide-react';
+import { format, parseISO } from 'date-fns';
+import { Loader2, MessageSquare, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
-import { Conversation } from '@/lib/types';
+import { Conversation, SortOrder } from '@/lib/types';
 import { ConversationDetail } from './ConversationDetail';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -26,6 +26,8 @@ interface ConversationListProps {
   total: number;
   onLoadMore: () => void;
   isLoading: boolean;
+  sortOrder: SortOrder;
+  onSortChange: (order: SortOrder) => void;
 }
 
 export function ConversationList({
@@ -34,8 +36,23 @@ export function ConversationList({
   total,
   onLoadMore,
   isLoading,
+  sortOrder,
+  onSortChange,
 }: ConversationListProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const toggleSort = () => {
+    onSortChange(sortOrder === 'desc' ? 'asc' : 'desc');
+  };
+
+  const formatTimestamp = (timestamp?: string) => {
+    if (!timestamp) return '-';
+    try {
+      return format(parseISO(timestamp), 'MMM d, yyyy HH:mm:ss');
+    } catch {
+      return timestamp;
+    }
+  };
 
   if (conversations.length === 0 && !isLoading) {
     return (
@@ -72,9 +89,23 @@ export function ConversationList({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[120px]">Type</TableHead>
+                    <TableHead className="w-[100px]">Type</TableHead>
                     <TableHead className="w-[100px]">Session</TableHead>
-                    <TableHead className="w-[160px]">Ingested At</TableHead>
+                    <TableHead className="w-[180px]">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="-ml-3 h-8 data-[state=open]:bg-accent"
+                        onClick={toggleSort}
+                      >
+                        Timestamp
+                        {sortOrder === 'desc' ? (
+                          <ArrowDown className="ml-2 h-4 w-4" />
+                        ) : (
+                          <ArrowUp className="ml-2 h-4 w-4" />
+                        )}
+                      </Button>
+                    </TableHead>
                     <TableHead>Preview</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -94,8 +125,8 @@ export function ConversationList({
                       <TableCell className="font-mono text-xs text-muted-foreground">
                         {conv.sessionId ? conv.sessionId.slice(0, 8) + '...' : '-'}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {format(new Date(conv.ingestedAt), 'MMM d, yyyy HH:mm')}
+                      <TableCell className="text-muted-foreground text-sm">
+                        {formatTimestamp(conv.timestamp)}
                       </TableCell>
                       <TableCell className="max-w-xs truncate text-muted-foreground">
                         {typeof conv.message === 'string'

@@ -11,6 +11,7 @@ const querySchema = z.object({
   endDate: z.string().optional(),
   cursor: z.string().optional(),
   limit: z.coerce.number().min(1).max(100).default(50),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });
 
 export async function GET(request: NextRequest) {
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const { projectId, sessionId, search, startDate, endDate, cursor, limit } = parsed.data;
+  const { projectId, sessionId, search, startDate, endDate, cursor, limit, sortOrder } = parsed.data;
 
   try {
     const collection = await getConversationsCollection();
@@ -53,10 +54,26 @@ export async function GET(request: NextRequest) {
     }
 
     // Cursor-based pagination
+    // Cursor format: base64(timestamp|_id)
     if (cursor) {
       try {
-        const cursorId = new ObjectId(Buffer.from(cursor, 'base64').toString());
-        query._id = { $lt: cursorId };
+        const decoded = Buffer.from(cursor, 'base64').toString();
+        const [cursorTimestamp, cursorId] = decoded.split('|');
+        const cursorOid = new ObjectId(cursorId);
+
+        // For descending order, we want records older than cursor
+        // For ascending order, we want records newer than cursor
+        if (sortOrder === 'desc') {
+          query.$or = [
+            { timestamp: { $lt: cursorTimestamp } },
+            { timestamp: cursorTimestamp, _id: { $lt: cursorOid } },
+          ];
+        } else {
+          query.$or = [
+            { timestamp: { $gt: cursorTimestamp } },
+            { timestamp: cursorTimestamp, _id: { $gt: cursorOid } },
+          ];
+        }
       } catch {
         return NextResponse.json({ error: 'Invalid cursor' }, { status: 400 });
       }
@@ -64,20 +81,24 @@ export async function GET(request: NextRequest) {
 
     // Get total count (without cursor filter)
     const countQuery = { ...query };
-    delete countQuery._id;
+    delete countQuery.$or;
     const total = await collection.countDocuments(countQuery);
 
-    // Fetch documents
+    // Sort direction based on sortOrder
+    const sortDirection = sortOrder === 'desc' ? -1 : 1;
+
+    // Fetch documents sorted by timestamp
     const docs = await collection
       .find(query)
-      .sort({ ingestedAt: -1, _id: -1 })
+      .sort({ timestamp: sortDirection, _id: sortDirection })
       .limit(limit + 1)
       .toArray();
 
     const hasMore = docs.length > limit;
     const data = hasMore ? docs.slice(0, -1) : docs;
+    // Cursor format: base64(timestamp|_id)
     const nextCursor = hasMore && data.length > 0
-      ? Buffer.from(data[data.length - 1]._id.toString()).toString('base64')
+      ? Buffer.from(`${data[data.length - 1].timestamp}|${data[data.length - 1]._id.toString()}`).toString('base64')
       : null;
 
     return NextResponse.json({

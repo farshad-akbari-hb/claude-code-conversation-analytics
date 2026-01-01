@@ -1,16 +1,17 @@
 'use client';
 
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import { Loader2, MessageSquareText } from 'lucide-react';
 
 import { FilterPanel } from '@/components/FilterPanel';
 import { ConversationList } from '@/components/ConversationList';
 import { useConversations } from '@/hooks/useConversations';
-import { Conversation } from '@/lib/types';
+import { Conversation, SortOrder } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 
 function ConversationViewer() {
+  const router = useRouter();
   const searchParams = useSearchParams();
 
   const projectId = searchParams.get('projectId') || '';
@@ -18,6 +19,7 @@ function ConversationViewer() {
   const search = searchParams.get('search') || undefined;
   const startDate = searchParams.get('startDate') || undefined;
   const endDate = searchParams.get('endDate') || undefined;
+  const sortOrder = (searchParams.get('sortOrder') as SortOrder) || 'desc';
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     useConversations({
@@ -26,6 +28,7 @@ function ConversationViewer() {
       search,
       startDate,
       endDate,
+      sortOrder,
     });
 
   const handleExport = () => {
@@ -37,6 +40,12 @@ function ConversationViewer() {
     if (endDate) params.set('endDate', endDate);
 
     window.open(`/api/conversations/export?${params.toString()}`, '_blank');
+  };
+
+  const handleSortChange = (newSortOrder: SortOrder) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('sortOrder', newSortOrder);
+    router.push(`?${params.toString()}`);
   };
 
   const conversations: Conversation[] =
@@ -60,6 +69,8 @@ function ConversationViewer() {
           total={total}
           onLoadMore={() => fetchNextPage()}
           isLoading={isFetchingNextPage}
+          sortOrder={sortOrder}
+          onSortChange={handleSortChange}
         />
       )}
     </>
