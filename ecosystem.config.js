@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 module.exports = {
   apps: [
     {
@@ -7,23 +9,13 @@ module.exports = {
       autorestart: true,
       watch: false,
       max_memory_restart: '200M',
-      
-      // Environment variables
+
+      // NODE_ENV only - other env vars loaded from .env
       env: {
         NODE_ENV: 'development',
-        MONGO_URI: 'mongodb://localhost:27017',
-        MONGO_DB: 'claude_logs',
-        SYNC_INTERVAL_MS: '5000',
-        BATCH_SIZE: '100',
-        HEALTH_PORT: '9090',
       },
       env_production: {
         NODE_ENV: 'production',
-        MONGO_URI: 'mongodb://localhost:27017',
-        MONGO_DB: 'claude_logs',
-        SYNC_INTERVAL_MS: '5000',
-        BATCH_SIZE: '100',
-        HEALTH_PORT: '9090',
       },
 
       // Restart behavior

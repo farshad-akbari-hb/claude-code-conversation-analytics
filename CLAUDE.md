@@ -59,6 +59,8 @@ cp .env.example .env
 # Edit .env with your MongoDB credentials
 ```
 
+Both `npm run dev` and PM2 (`ecosystem.config.js`) read from `.env`.
+
 Environment variables (see `src/index.ts` config object):
 
 | Variable | Default | Purpose |
