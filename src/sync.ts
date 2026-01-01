@@ -44,6 +44,7 @@ export class MongoSync {
       await this.collection.createIndex({ projectId: 1, timestamp: -1 });
       await this.collection.createIndex({ sessionId: 1 });
       await this.collection.createIndex({ 'ingestedAt': -1 });
+      await this.collection.createIndex({ message: 'text' });
 
       console.log('MongoDB connected');
       return true;

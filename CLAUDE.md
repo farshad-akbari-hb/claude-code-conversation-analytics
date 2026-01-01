@@ -10,6 +10,11 @@ npm run build        # Compile TypeScript to dist/
 npm run dev          # Run with hot reload (tsx watch)
 npm start            # Run compiled version
 
+# UI (Next.js on port 3000)
+cd ui && npm install # First time only
+npm run dev:ui       # Development
+npm run build:ui     # Production build
+
 # Production (PM2)
 pm2 start ecosystem.config.js
 pm2 logs claude-mongo-sync
@@ -82,3 +87,29 @@ curl localhost:9090/health
 # Buffer inspection
 sqlite3 ~/.claude-sync/buffer.db "SELECT COUNT(*) FROM pending_entries WHERE synced=0"
 ```
+
+## UI (`/ui`)
+
+Next.js application for browsing and searching conversation logs.
+
+### Features
+- Filter by project (required), session, date range
+- Full-text search in messages
+- Export filtered results to JSON
+- Cursor-based pagination
+
+### Structure
+
+| Path | Purpose |
+|------|---------|
+| `ui/src/app/api/` | API routes (projects, sessions, conversations, export) |
+| `ui/src/components/` | FilterPanel, ConversationList, ConversationDetail |
+| `ui/src/lib/mongodb.ts` | MongoDB connection singleton |
+| `ui/src/hooks/` | React Query hooks |
+
+### Ports
+
+| Service | Port |
+|---------|------|
+| Sync Health | 9090 |
+| UI | 3000 |
