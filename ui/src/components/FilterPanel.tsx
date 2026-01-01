@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { format } from 'date-fns';
-import { CalendarIcon, Download, Search } from 'lucide-react';
+import { CalendarIcon, Download, Search, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,9 +25,11 @@ import { cn } from '@/lib/utils';
 
 interface FilterPanelProps {
   onExport: () => void;
+  chartFilterActive?: boolean;
+  onResetChartFilter?: () => void;
 }
 
-export function FilterPanel({ onExport }: FilterPanelProps) {
+export function FilterPanel({ onExport, chartFilterActive, onResetChartFilter }: FilterPanelProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -157,7 +159,8 @@ export function FilterPanel({ onExport }: FilterPanelProps) {
                   variant="outline"
                   className={cn(
                     'w-full justify-start text-left font-normal',
-                    !startDate && 'text-muted-foreground'
+                    !startDate && 'text-muted-foreground',
+                    chartFilterActive && 'border-primary ring-1 ring-primary/20'
                   )}
                 >
                   <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
@@ -188,7 +191,8 @@ export function FilterPanel({ onExport }: FilterPanelProps) {
                   variant="outline"
                   className={cn(
                     'w-full justify-start text-left font-normal',
-                    !endDate && 'text-muted-foreground'
+                    !endDate && 'text-muted-foreground',
+                    chartFilterActive && 'border-primary ring-1 ring-primary/20'
                   )}
                 >
                   <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
@@ -209,6 +213,21 @@ export function FilterPanel({ onExport }: FilterPanelProps) {
               </PopoverContent>
             </Popover>
           </div>
+
+          {/* Reset Chart Filter Button */}
+          {chartFilterActive && onResetChartFilter && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium invisible">Reset</label>
+              <Button
+                variant="outline"
+                onClick={onResetChartFilter}
+                className="w-full h-9 border-primary/50"
+              >
+                <X className="h-4 w-4 mr-2" />
+                Reset
+              </Button>
+            </div>
+          )}
 
           {/* Search */}
           <div className="space-y-2 col-span-2 md:col-span-1 lg:col-span-2">

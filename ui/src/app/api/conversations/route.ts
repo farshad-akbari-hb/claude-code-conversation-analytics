@@ -37,14 +37,14 @@ export async function GET(request: NextRequest) {
       query.sessionId = sessionId;
     }
 
-    // Date range filter
+    // Date range filter using timestamp field (same as stats API)
     if (startDate || endDate) {
-      query.ingestedAt = {};
+      query.timestamp = { $ne: null, $exists: true } as Record<string, unknown>;
       if (startDate) {
-        query.ingestedAt.$gte = new Date(startDate);
+        (query.timestamp as Record<string, unknown>).$gte = startDate;
       }
       if (endDate) {
-        query.ingestedAt.$lte = new Date(endDate);
+        (query.timestamp as Record<string, unknown>).$lte = endDate + 'T23:59:59.999Z';
       }
     }
 

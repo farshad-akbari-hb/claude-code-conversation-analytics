@@ -8,7 +8,8 @@ import { FilterPanel } from '@/components/FilterPanel';
 import { ConversationList } from '@/components/ConversationList';
 import { SessionChart } from '@/components/SessionChart';
 import { useConversations } from '@/hooks/useConversations';
-import { Conversation, SortOrder } from '@/lib/types';
+import { Conversation, SortOrder, TimeGranularity } from '@/lib/types';
+import { periodToDateRange } from '@/lib/dateUtils';
 import { Card, CardContent } from '@/components/ui/card';
 
 function ConversationViewer() {
@@ -21,6 +22,7 @@ function ConversationViewer() {
   const startDate = searchParams.get('startDate') || undefined;
   const endDate = searchParams.get('endDate') || undefined;
   const sortOrder = (searchParams.get('sortOrder') as SortOrder) || 'desc';
+  const chartFilterActive = searchParams.get('chartFilter') === 'true';
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     useConversations({
@@ -49,19 +51,43 @@ function ConversationViewer() {
     router.push(`?${params.toString()}`);
   };
 
+  const handleChartBarClick = (periodStart: string, granularity: TimeGranularity) => {
+    const { startDate, endDate } = periodToDateRange(periodStart, granularity);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('startDate', startDate);
+    params.set('endDate', endDate);
+    params.set('chartFilter', 'true');
+    router.push(`?${params.toString()}`);
+  };
+
+  const handleResetChartFilter = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('startDate');
+    params.delete('endDate');
+    params.delete('chartFilter');
+    router.push(`?${params.toString()}`);
+  };
+
   const conversations: Conversation[] =
     data?.pages.flatMap((page) => page.data) ?? [];
   const total = data?.pages[0]?.pagination.total ?? 0;
 
   return (
     <>
-      <FilterPanel onExport={handleExport} />
+      <FilterPanel
+        onExport={handleExport}
+        chartFilterActive={chartFilterActive}
+        onResetChartFilter={handleResetChartFilter}
+      />
 
       <SessionChart
         projectId={projectId}
         sessionId={sessionId}
         startDate={startDate}
         endDate={endDate}
+        onBarClick={handleChartBarClick}
+        chartFilterActive={chartFilterActive}
+        onResetFilter={handleResetChartFilter}
       />
 
       {isLoading && projectId ? (

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
-import { Loader2, BarChart3 } from 'lucide-react';
+import { Loader2, BarChart3, X } from 'lucide-react';
 
 import {
   ChartContainer,
@@ -13,6 +13,7 @@ import {
   ChartLegendContent,
 } from '@/components/ui/chart';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
@@ -21,7 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useStats } from '@/hooks/useStats';
-import { TimeGranularity } from '@/lib/types';
+import { TimeGranularity, ChartDataPoint } from '@/lib/types';
 
 const chartConfig: ChartConfig = {
   user: {
@@ -39,6 +40,9 @@ interface SessionChartProps {
   sessionId?: string;
   startDate?: string;
   endDate?: string;
+  onBarClick?: (periodStart: string, granularity: TimeGranularity) => void;
+  chartFilterActive?: boolean;
+  onResetFilter?: () => void;
 }
 
 export function SessionChart({
@@ -46,11 +50,20 @@ export function SessionChart({
   sessionId,
   startDate,
   endDate,
+  onBarClick,
+  chartFilterActive,
+  onResetFilter,
 }: SessionChartProps) {
   const [granularity, setGranularity] = useState<TimeGranularity>('day');
   const [periodCount, setPeriodCount] = useState(14);
 
-  const { data, isLoading, isError } = useStats({
+  const handleBarClick = (data: { payload?: ChartDataPoint }) => {
+    if (onBarClick && data.payload?.periodStart) {
+      onBarClick(data.payload.periodStart, granularity);
+    }
+  };
+
+  const { data: statsData, isLoading, isError } = useStats({
     projectId,
     sessionId,
     startDate,
@@ -68,12 +81,19 @@ export function SessionChart({
           <CardTitle className="text-base font-medium flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
             Message Activity
+            {chartFilterActive && (
+              <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                Filtered
+              </span>
+            )}
           </CardTitle>
           <ChartControls
             granularity={granularity}
             periodCount={periodCount}
             onGranularityChange={setGranularity}
             onPeriodCountChange={setPeriodCount}
+            chartFilterActive={chartFilterActive}
+            onResetFilter={onResetFilter}
           />
         </div>
       </CardHeader>
@@ -82,11 +102,11 @@ export function SessionChart({
           <ChartLoadingState />
         ) : isError ? (
           <ChartErrorState />
-        ) : !data?.data.length ? (
+        ) : !statsData?.data.length ? (
           <ChartEmptyState />
         ) : (
           <ChartContainer config={chartConfig} className="h-[250px] w-full">
-            <BarChart accessibilityLayer data={data.data}>
+            <BarChart accessibilityLayer data={statsData.data}>
               <CartesianGrid vertical={false} />
               <XAxis
                 dataKey="period"
@@ -102,12 +122,16 @@ export function SessionChart({
                 stackId="messages"
                 fill="var(--color-user)"
                 radius={[0, 0, 0, 0]}
+                onClick={handleBarClick}
+                style={{ cursor: onBarClick ? 'pointer' : 'default' }}
               />
               <Bar
                 dataKey="assistant"
                 stackId="messages"
                 fill="var(--color-assistant)"
                 radius={[4, 4, 0, 0]}
+                onClick={handleBarClick}
+                style={{ cursor: onBarClick ? 'pointer' : 'default' }}
               />
             </BarChart>
           </ChartContainer>
@@ -122,6 +146,8 @@ interface ChartControlsProps {
   periodCount: number;
   onGranularityChange: (value: TimeGranularity) => void;
   onPeriodCountChange: (value: number) => void;
+  chartFilterActive?: boolean;
+  onResetFilter?: () => void;
 }
 
 function ChartControls({
@@ -129,9 +155,22 @@ function ChartControls({
   periodCount,
   onGranularityChange,
   onPeriodCountChange,
+  chartFilterActive,
+  onResetFilter,
 }: ChartControlsProps) {
   return (
     <div className="flex items-center gap-2">
+      {chartFilterActive && onResetFilter && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onResetFilter}
+          className="h-8 px-2 text-xs"
+        >
+          <X className="h-3 w-3 mr-1" />
+          Clear filter
+        </Button>
+      )}
       <Select
         value={granularity}
         onValueChange={(v) => onGranularityChange(v as TimeGranularity)}

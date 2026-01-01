@@ -61,6 +61,9 @@ function transformToChartData(
     const period = result._id.period;
     const type = result._id.type;
 
+    // Skip entries with null period (documents without valid timestamp)
+    if (!period) continue;
+
     if (!periodMap.has(period)) {
       periodMap.set(period, { user: 0, assistant: 0 });
     }
@@ -105,15 +108,18 @@ export async function GET(request: NextRequest) {
       matchStage.sessionId = sessionId;
     }
 
-    if (startDate || endDate) {
-      matchStage.timestamp = {};
-      if (startDate) {
-        matchStage.timestamp.$gte = startDate;
-      }
-      if (endDate) {
-        matchStage.timestamp.$lte = endDate + 'T23:59:59.999Z';
-      }
+    // Build timestamp filter - always exclude null, optionally add date range
+    const timestampFilter: Record<string, unknown> = {
+      $ne: null,
+      $exists: true,
+    };
+    if (startDate) {
+      timestampFilter.$gte = startDate;
     }
+    if (endDate) {
+      timestampFilter.$lte = endDate + 'T23:59:59.999Z';
+    }
+    matchStage.timestamp = timestampFilter;
 
     const dateFormat = getDateFormat(granularity);
 
