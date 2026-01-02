@@ -113,18 +113,18 @@ analytics/
 
 ---
 
-### Phase 5: dbt Staging Models (Bronze)
+### Phase 5: dbt Staging Models (Bronze) ✅ COMPLETED
 **Goal**: Create staging models that clean and normalize raw data
 
 **Tasks**:
-- [ ] 5.1 Create `models/staging/stg_conversations.sql`
+- [x] 5.1 Create `models/staging/stg_conversations.sql`
   - Basic cleaning, type casting, null handling
-- [ ] 5.2 Create `models/staging/stg_messages.sql`
+- [x] 5.2 Create `models/staging/stg_messages.sql`
   - Extract message entries, parse role/content
-- [ ] 5.3 Create `models/staging/stg_tool_calls.sql`
+- [x] 5.3 Create `models/staging/stg_tool_calls.sql`
   - Extract tool_use entries, parse tool name/parameters
-- [ ] 5.4 Create `models/staging/schema.yml` with tests
-- [ ] 5.5 Run `dbt test` to validate staging layer
+- [x] 5.4 Create `models/staging/schema.yml` with tests
+- [x] 5.5 Run `dbt test` to validate staging layer
 
 ---
 

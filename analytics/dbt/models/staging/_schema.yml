@@ -1,0 +1,148 @@
+# Staging Layer Schema
+# Bronze layer: minimal transformations, focused on data quality
+
+version: 2
+
+models:
+  - name: stg_conversations
+    description: |
+      Cleaned and standardized conversation entries from raw data.
+      Foundation model for all downstream analytics.
+
+    columns:
+      - name: conversation_id
+        description: "Unique identifier for each conversation entry"
+        tests:
+          - unique
+          - not_null
+
+      - name: entry_type
+        description: "Type of entry: user, assistant, tool_use, tool_result, or unknown"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['user', 'assistant', 'tool_use', 'tool_result', 'unknown']
+
+      - name: session_id
+        description: "Session identifier grouping related entries"
+
+      - name: project_id
+        description: "Project identifier from source file path"
+
+      - name: effective_timestamp
+        description: "Best available timestamp for the entry"
+        tests:
+          - not_null
+
+      - name: partition_date
+        description: "Date used for partitioning"
+        tests:
+          - not_null
+
+      - name: is_message
+        description: "True if entry is a user or assistant message"
+        tests:
+          - not_null
+
+      - name: is_tool_related
+        description: "True if entry is a tool_use or tool_result"
+        tests:
+          - not_null
+
+  - name: stg_messages
+    description: |
+      Filtered view of conversation messages (user and assistant only).
+      Enriched with sequence numbers and turn classification.
+
+    columns:
+      - name: conversation_id
+        description: "Unique identifier for the message"
+        tests:
+          - unique
+          - not_null
+
+      - name: session_id
+        description: "Session containing this message"
+
+      - name: role
+        description: "Message role: user or assistant"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['user', 'assistant']
+
+      - name: message_content
+        description: "Text content of the message"
+        tests:
+          - not_null
+
+      - name: message_sequence
+        description: "Order of message within session"
+        tests:
+          - not_null
+
+      - name: turn_type
+        description: "Classification of conversation turn"
+        tests:
+          - accepted_values:
+              values: ['conversation_start', 'follow_up', 'response', 'continuation']
+
+  - name: stg_tool_calls
+    description: |
+      Tool invocations and results extracted from conversations.
+      Parsed to identify tool names and basic patterns.
+
+    columns:
+      - name: conversation_id
+        description: "Unique identifier for the tool entry"
+        tests:
+          - unique
+          - not_null
+
+      - name: session_id
+        description: "Session containing this tool call"
+
+      - name: entry_type
+        description: "tool_use or tool_result"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['tool_use', 'tool_result']
+
+      - name: tool_name
+        description: "Identified tool name"
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - Read
+                - Write
+                - Edit
+                - Bash
+                - Glob
+                - Grep
+                - Task
+                - TodoRead
+                - TodoWrite
+                - WebFetch
+                - WebSearch
+                - NotebookEdit
+                - MultiEdit
+                - AskFollowupQuestion
+                - AttemptCompletion
+                - unknown
+
+      - name: is_invocation
+        description: "True if this is a tool_use entry"
+        tests:
+          - not_null
+
+      - name: is_result
+        description: "True if this is a tool_result entry"
+        tests:
+          - not_null
+
+      - name: tool_sequence
+        description: "Order of tool call within session"
+        tests:
+          - not_null
