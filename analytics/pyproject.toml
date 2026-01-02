@@ -1,0 +1,109 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claude-analytics"
+version = "0.1.0"
+description = "ELT Analytics Platform for Claude Code conversation logs"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [
+    {name = "Claude Analytics Team"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    # MongoDB extraction
+    "pymongo>=4.6",
+
+    # Data processing
+    "pyarrow>=15.0",
+    "pandas>=2.0",
+
+    # DuckDB OLAP
+    "duckdb>=0.10",
+
+    # Orchestration
+    "prefect>=2.14",
+
+    # Data quality
+    "great-expectations>=0.18",
+
+    # Configuration
+    "python-dotenv>=1.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+
+    # CLI
+    "typer>=0.9",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dbt = [
+    "dbt-core>=1.7",
+    "dbt-duckdb>=1.7",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-asyncio>=0.21",
+    "black>=23.0",
+    "ruff>=0.1",
+    "mypy>=1.0",
+    "pre-commit>=3.0",
+]
+all = [
+    "claude-analytics[dbt,dev]",
+]
+
+[project.scripts]
+claude-analytics = "analytics.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/your-org/claude-mongo-sync"
+Documentation = "https://github.com/your-org/claude-mongo-sync#readme"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["analytics*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+]
+ignore = [
+    "E501",   # line too long (handled by black)
+]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --cov=analytics --cov-report=term-missing"

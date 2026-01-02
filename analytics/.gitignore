@@ -1,0 +1,82 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Data directories (keep structure with .gitkeep)
+data/raw/*
+!data/raw/.gitkeep
+data/incremental/*
+!data/incremental/.gitkeep
+data/dead_letter/*
+!data/dead_letter/.gitkeep
+
+# DuckDB database
+*.db
+*.duckdb
+
+# High water mark
+.high_water_mark
+
+# Environment files (keep example)
+.env.analytics
+!.env.analytics.example
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# Great Expectations
+great_expectations/uncommitted/
+great_expectations/checkpoints/
+great_expectations/validations/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
