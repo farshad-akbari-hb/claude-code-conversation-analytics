@@ -1,8 +1,6 @@
 # Docker Compose for Claude Analytics Platform
 # Includes: Prefect, Analytics Worker, Metabase
 
-version: '3.8'
-
 services:
   # ==========================================================================
   # Prefect Server - Workflow orchestration
@@ -10,20 +8,22 @@ services:
   prefect-server:
     image: prefecthq/prefect:2-python3.11
     container_name: prefect-server
-    command: prefect server start
+    command: prefect server start --host 0.0.0.0
     environment:
       - PREFECT_UI_API_URL=http://localhost:4200/api
       - PREFECT_API_DATABASE_CONNECTION_URL=postgresql+asyncpg://prefect:prefect@prefect-db:5432/prefect
+      - PREFECT_SERVER_API_HOST=0.0.0.0
     ports:
       - "4200:4200"
     depends_on:
       prefect-db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4200/api/health"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')\""]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 30s
     networks:
       - analytics-network
 
@@ -110,7 +110,8 @@ services:
     ports:
       - "3001:3000"
     volumes:
-      - duckdb-data:/duckdb:ro
+      # DuckDB needs write access for lock files even when reading
+      - duckdb-data:/duckdb
     depends_on:
       metabase-db:
         condition: service_healthy
@@ -118,8 +119,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 5
+      start_period: 90s
     networks:
       - analytics-network
 
@@ -161,7 +162,8 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - duckdb-data:/duckdb:ro
+      # DuckDB needs write access for lock files even when reading
+      - duckdb-data:/duckdb
     networks:
       - analytics-network
 

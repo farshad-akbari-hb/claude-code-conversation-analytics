@@ -64,11 +64,15 @@ RUN mkdir -p /data/raw /data/incremental /data/dead_letter /duckdb && \
 # Copy application code
 COPY --chown=analytics:analytics . .
 
-# Install dbt packages
-RUN cd /app/dbt && dbt deps --profiles-dir /app/dbt
+# Create dbt logs directory with correct ownership before dbt deps
+RUN mkdir -p /app/dbt/logs /app/dbt/target && \
+    chown -R analytics:analytics /app/dbt
 
-# Switch to non-root user
+# Switch to non-root user before running dbt
 USER analytics
+
+# Install dbt packages (now runs as analytics user)
+RUN cd /app/dbt && dbt deps --profiles-dir /app/dbt
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

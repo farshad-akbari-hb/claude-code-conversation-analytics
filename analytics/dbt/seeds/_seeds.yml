@@ -35,14 +35,15 @@ seeds:
         tests:
           - not_null
           - accepted_values:
-              values:
-                - file_operations
-                - shell
-                - search
-                - agent
-                - planning
-                - network
-                - interaction
+              arguments:
+                values:
+                  - file_operations
+                  - shell
+                  - search
+                  - agent
+                  - planning
+                  - network
+                  - interaction
 
       - name: description
         description: "Human-readable description of the tool"

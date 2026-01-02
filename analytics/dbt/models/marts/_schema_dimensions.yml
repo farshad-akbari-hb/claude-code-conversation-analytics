@@ -26,7 +26,8 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: [1, 2, 3, 4]
+              arguments:
+                values: [1, 2, 3, 4]
 
       - name: month
         description: "Month of year (1-12)"
@@ -80,13 +81,15 @@ models:
         description: "Current activity classification"
         tests:
           - accepted_values:
-              values: ['active_today', 'active_this_week', 'active_this_month', 'inactive']
+              arguments:
+                values: ['active_today', 'active_this_week', 'active_this_month', 'inactive']
 
       - name: project_size
         description: "Size classification based on session count"
         tests:
           - accepted_values:
-              values: ['single_session', 'small', 'medium', 'large']
+              arguments:
+                values: ['single_session', 'small', 'medium', 'large']
 
   - name: dim_sessions
     description: |
@@ -130,25 +133,29 @@ models:
         description: "Duration classification"
         tests:
           - accepted_values:
-              values: ['quick', 'short', 'medium', 'long']
+              arguments:
+                values: ['quick', 'short', 'medium', 'long']
 
       - name: activity_level
         description: "Activity classification"
         tests:
           - accepted_values:
-              values: ['minimal', 'light', 'moderate', 'heavy']
+              arguments:
+                values: ['minimal', 'light', 'moderate', 'heavy']
 
       - name: session_time_of_day
         description: "Time of day when session started"
         tests:
           - accepted_values:
-              values: ['morning', 'afternoon', 'evening', 'night']
+              arguments:
+                values: ['morning', 'afternoon', 'evening', 'night']
 
       - name: session_day_type
         description: "Weekday or weekend"
         tests:
           - accepted_values:
-              values: ['weekday', 'weekend']
+              arguments:
+                values: ['weekday', 'weekend']
 
   - name: dim_tools
     description: |
@@ -173,15 +180,16 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values:
-                - file_operations
-                - shell
-                - search
-                - agent
-                - planning
-                - network
-                - interaction
-                - unknown
+              arguments:
+                values:
+                  - file_operations
+                  - shell
+                  - search
+                  - agent
+                  - planning
+                  - network
+                  - interaction
+                  - unknown
 
       - name: popularity_rank
         description: "Ranking by total usage"
@@ -192,4 +200,5 @@ models:
         description: "Usage frequency classification"
         tests:
           - accepted_values:
-              values: ['unused', 'rare', 'occasional', 'frequent', 'heavy']
+              arguments:
+                values: ['unused', 'rare', 'occasional', 'frequent', 'heavy']

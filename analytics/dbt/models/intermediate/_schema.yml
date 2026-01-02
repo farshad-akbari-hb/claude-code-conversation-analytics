@@ -23,26 +23,29 @@ models:
         description: "Classified task type based on message content"
         tests:
           - accepted_values:
-              values:
-                - bug_fix
-                - feature
-                - refactor
-                - testing
-                - documentation
-                - review
-                - other
+              arguments:
+                values:
+                  - bug_fix
+                  - feature
+                  - refactor
+                  - testing
+                  - documentation
+                  - review
+                  - other
 
       - name: time_of_day
         description: "Time classification: morning, afternoon, evening, night"
         tests:
           - accepted_values:
-              values: ['morning', 'afternoon', 'evening', 'night']
+              arguments:
+                values: ['morning', 'afternoon', 'evening', 'night']
 
       - name: day_type
         description: "Weekday or weekend"
         tests:
           - accepted_values:
-              values: ['weekday', 'weekend']
+              arguments:
+                values: ['weekday', 'weekend']
 
       - name: hour_of_day
         description: "Hour (0-23) when message was sent"
@@ -96,13 +99,15 @@ models:
         description: "Duration classification"
         tests:
           - accepted_values:
-              values: ['quick', 'short', 'medium', 'long']
+              arguments:
+                values: ['quick', 'short', 'medium', 'long']
 
       - name: activity_level
         description: "Activity classification based on message count"
         tests:
           - accepted_values:
-              values: ['minimal', 'light', 'moderate', 'heavy']
+              arguments:
+                values: ['minimal', 'light', 'moderate', 'heavy']
 
   - name: int_tool_usage
     description: |
@@ -145,17 +150,18 @@ models:
         description: "Classification of file type if applicable"
         tests:
           - accepted_values:
-              values:
-                - javascript
-                - python
-                - jvm
-                - go
-                - rust
-                - sql
-                - documentation
-                - config
-                - styles
-                - html
-                - shell
-                - docker
-                - other
+              arguments:
+                values:
+                  - javascript
+                  - python
+                  - jvm
+                  - go
+                  - rust
+                  - sql
+                  - documentation
+                  - config
+                  - styles
+                  - html
+                  - shell
+                  - docker
+                  - other

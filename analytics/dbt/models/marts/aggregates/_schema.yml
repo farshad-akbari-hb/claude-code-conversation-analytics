@@ -15,11 +15,12 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values:
-                - overall
-                - by_duration_category
-                - by_activity_level
-                - by_time_of_day
+              arguments:
+                values:
+                  - overall
+                  - by_duration_category
+                  - by_activity_level
+                  - by_time_of_day
 
       - name: total_sessions
         description: "Count of sessions for this grouping"
@@ -74,11 +75,12 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values:
-                - overall
-                - by_file_type
-                - by_operation_type
-                - by_extension
+              arguments:
+                values:
+                  - overall
+                  - by_file_type
+                  - by_operation_type
+                  - by_extension
 
       - name: total_operations
         description: "Total file operations in this grouping"
@@ -151,14 +153,16 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+              arguments:
+                values: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
       - name: time_of_day
         description: "Time period classification"
         tests:
           - not_null
           - accepted_values:
-              values: ['morning', 'afternoon', 'evening', 'night']
+              arguments:
+                values: ['morning', 'afternoon', 'evening', 'night']
 
       - name: total_activity
         description: "Combined message and tool activity count"

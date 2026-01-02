@@ -35,7 +35,8 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['user', 'assistant']
+              arguments:
+                values: ['user', 'assistant']
 
       - name: content_length
         description: "Length of message content in characters"
@@ -46,14 +47,15 @@ models:
         description: "Classified task type"
         tests:
           - accepted_values:
-              values:
-                - bug_fix
-                - feature
-                - refactor
-                - testing
-                - documentation
-                - review
-                - other
+              arguments:
+                values:
+                  - bug_fix
+                  - feature
+                  - refactor
+                  - testing
+                  - documentation
+                  - review
+                  - other
 
       - name: effective_timestamp
         description: "When the message was created"
@@ -98,7 +100,8 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['tool_use', 'tool_result']
+              arguments:
+                values: ['tool_use', 'tool_result']
 
       - name: tool_name
         description: "Name of the tool"
@@ -153,14 +156,16 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['read', 'write', 'edit', 'multi_edit', 'other']
+              arguments:
+                values: ['read', 'write', 'edit', 'multi_edit', 'other']
 
       - name: tool_name
         description: "Underlying tool name"
         tests:
           - not_null
           - accepted_values:
-              values: ['Read', 'Write', 'Edit', 'NotebookEdit', 'MultiEdit']
+              arguments:
+                values: ['Read', 'Write', 'Edit', 'NotebookEdit', 'MultiEdit']
 
       - name: effective_timestamp
         description: "When the file operation occurred"

@@ -21,7 +21,8 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['user', 'assistant', 'tool_use', 'tool_result', 'unknown']
+              arguments:
+                values: ['user', 'assistant', 'tool_use', 'tool_result', 'unknown']
 
       - name: session_id
         description: "Session identifier grouping related entries"
@@ -69,7 +70,8 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['user', 'assistant']
+              arguments:
+                values: ['user', 'assistant']
 
       - name: message_content
         description: "Text content of the message"
@@ -85,7 +87,8 @@ models:
         description: "Classification of conversation turn"
         tests:
           - accepted_values:
-              values: ['conversation_start', 'follow_up', 'response', 'continuation']
+              arguments:
+                values: ['conversation_start', 'follow_up', 'response', 'continuation']
 
   - name: stg_tool_calls
     description: |
@@ -107,30 +110,32 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['tool_use', 'tool_result']
+              arguments:
+                values: ['tool_use', 'tool_result']
 
       - name: tool_name
         description: "Identified tool name"
         tests:
           - not_null
           - accepted_values:
-              values:
-                - Read
-                - Write
-                - Edit
-                - Bash
-                - Glob
-                - Grep
-                - Task
-                - TodoRead
-                - TodoWrite
-                - WebFetch
-                - WebSearch
-                - NotebookEdit
-                - MultiEdit
-                - AskFollowupQuestion
-                - AttemptCompletion
-                - unknown
+              arguments:
+                values:
+                  - Read
+                  - Write
+                  - Edit
+                  - Bash
+                  - Glob
+                  - Grep
+                  - Task
+                  - TodoRead
+                  - TodoWrite
+                  - WebFetch
+                  - WebSearch
+                  - NotebookEdit
+                  - MultiEdit
+                  - AskFollowupQuestion
+                  - AttemptCompletion
+                  - unknown
 
       - name: is_invocation
         description: "True if this is a tool_use entry"
