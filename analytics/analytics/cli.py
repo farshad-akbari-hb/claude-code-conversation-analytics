@@ -516,5 +516,40 @@ def validate(
         raise typer.Exit(1)
 
 
+@app.command()
+def deploy(
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Enable verbose logging",
+    ),
+) -> None:
+    """Deploy all flows to Prefect server.
+
+    Creates/updates the following deployments:
+    - hourly-analytics: Incremental sync every hour
+    - daily-full-refresh: Full refresh at 2 AM daily
+    - adhoc-analytics: Manual trigger
+    - full-backfill: Manual full historical backfill
+    """
+    setup_logging("DEBUG" if verbose else "INFO")
+
+    console.print("[bold blue]Deploying Flows to Prefect[/bold blue]\n")
+
+    try:
+        from analytics.flows.deployment import apply_deployments
+
+        apply_deployments()
+        console.print("\n[bold green]All deployments applied successfully![/bold green]")
+        console.print("\nView deployments at: http://localhost:4200/deployments")
+
+    except Exception as e:
+        console.print(f"[bold red]Deployment failed:[/bold red] {e}")
+        console.print("\nMake sure Prefect server is running:")
+        console.print("  docker-compose -f docker-compose.analytics.yml up -d prefect-server")
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()

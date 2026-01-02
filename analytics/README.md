@@ -29,11 +29,24 @@ MongoDB → Python Extractor → Parquet Files → DuckDB → dbt → Metabase
 ```bash
 cd analytics
 
-# Start all services
-docker-compose -f docker-compose.analytics.yml up -d
+# Start all services (recommended)
+make up
+
+# Or start only Prefect infrastructure (no Metabase)
+make up-prefect
 
 # Check status
 docker-compose -f docker-compose.analytics.yml ps
+```
+
+### Deploy Flows & Enable Scheduling
+
+```bash
+# Deploy flows to Prefect server (registers schedules)
+make deploy
+
+# View deployment status
+make status
 ```
 
 ### Access Services
@@ -47,9 +60,38 @@ docker-compose -f docker-compose.analytics.yml ps
 ### Run Initial Backfill
 
 ```bash
-# Trigger full backfill via Prefect
+# Trigger full backfill via Makefile (recommended)
+make run-backfill
+
+# Or via CLI directly
 docker-compose -f docker-compose.analytics.yml exec analytics-worker \
   python -m analytics.cli pipeline --full-backfill --full-refresh
+```
+
+### Makefile Commands Reference
+
+```bash
+make help           # Show all available commands
+
+# Infrastructure
+make up             # Start all services
+make up-prefect     # Start only Prefect (no Metabase)
+make down           # Stop all services
+make logs           # View worker logs
+make shell          # Open shell in worker container
+
+# Deployments
+make deploy         # Deploy flows to Prefect server
+make status         # Show deployment status
+
+# Run Pipeline
+make run-adhoc      # Trigger incremental run
+make run-backfill   # Trigger full backfill
+make run-daily      # Trigger daily refresh
+make pipeline       # Run directly (no Prefect)
+
+# Development
+make worker-local   # Start local worker for debugging
 ```
 
 ## Local Development
@@ -93,6 +135,9 @@ python -m analytics.cli pipeline
 
 # Validate data quality
 python -m analytics.cli validate
+
+# Deploy flows to Prefect server
+python -m analytics.cli deploy
 ```
 
 ### dbt Development
@@ -144,6 +189,8 @@ analytics/
 ├── metabase/           # Dashboard config
 ├── Dockerfile
 ├── docker-compose.analytics.yml
+├── Makefile            # Convenience commands
+├── prefect.yaml        # Deployment configuration
 └── requirements.txt
 ```
 
@@ -192,18 +239,43 @@ Environment variables (see `.env.analytics.example`):
 
 ### Scheduled Pipeline
 
-The hourly pipeline runs automatically via Prefect. To modify:
+Pipelines run automatically via Prefect work pool. Available deployments:
 
-1. Edit schedule in `analytics/flows/deployment.py`
-2. Apply changes: `python -m analytics.flows.deployment`
+| Deployment | Schedule | Description |
+|------------|----------|-------------|
+| `hourly-analytics` | Every hour | Incremental sync |
+| `daily-full-refresh` | 2:00 AM | Full table refresh |
+| `adhoc-analytics` | Manual | On-demand incremental |
+| `full-backfill` | Manual | Historical backfill |
+
+**Setup scheduled runs:**
+
+```bash
+# 1. Start infrastructure
+make up-prefect
+
+# 2. Deploy flows (registers schedules)
+make deploy
+
+# 3. Verify in Prefect UI
+open http://localhost:4200
+```
+
+**Modify schedules:**
+
+1. Edit `prefect.yaml` (schedules are in the `schedules` key for each deployment)
+2. Re-deploy: `make deploy`
 
 ### Manual Runs
 
 ```bash
-# Run incremental update
-python -m analytics.cli pipeline
+# Via Makefile (recommended)
+make run-adhoc      # Incremental
+make run-backfill   # Full historical
+make run-daily      # Full refresh
 
-# Run with full refresh
+# Via CLI (direct execution, no Prefect)
+python -m analytics.cli pipeline
 python -m analytics.cli pipeline --full-refresh
 
 # Run specific dbt models
@@ -226,11 +298,17 @@ python -m analytics.cli validate --build-docs
 ### Troubleshooting
 
 ```bash
-# Check pipeline status in Prefect
-docker-compose -f docker-compose.analytics.yml logs prefect-server
+# Check pipeline status in Prefect UI
+open http://localhost:4200
 
 # View worker logs
-docker-compose -f docker-compose.analytics.yml logs analytics-worker
+make logs
+
+# Check deployment status
+make status
+
+# Open shell in worker container
+make shell
 
 # Query DuckDB directly
 docker-compose -f docker-compose.analytics.yml exec analytics-worker \

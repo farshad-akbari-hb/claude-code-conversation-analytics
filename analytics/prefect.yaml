@@ -1,0 +1,75 @@
+# Prefect deployment configuration
+# Deploy with: prefect deploy --all
+
+name: claude-analytics
+
+# Build section - not needed since code is already in container
+build: null
+
+# Push section - not needed for local deployments
+push: null
+
+# Pull section - code is already available in the worker container
+pull: null
+
+deployments:
+  # Hourly incremental pipeline
+  - name: hourly-analytics
+    version: "1.0.0"
+    tags:
+      - analytics
+      - scheduled
+      - hourly
+    description: "Hourly incremental analytics pipeline"
+    entrypoint: analytics/flows/main_pipeline.py:scheduled_pipeline
+    work_pool:
+      name: analytics-pool
+    schedules:
+      - interval: 3600  # 1 hour in seconds
+    parameters: {}
+
+  # Daily full refresh at 2 AM
+  - name: daily-full-refresh
+    version: "1.0.0"
+    tags:
+      - analytics
+      - scheduled
+      - daily
+    description: "Daily full refresh of analytics (2 AM)"
+    entrypoint: analytics/flows/main_pipeline.py:analytics_pipeline
+    work_pool:
+      name: analytics-pool
+    schedules:
+      - cron: "0 2 * * *"
+    parameters:
+      full_backfill: false
+      full_refresh: true
+
+  # Manual ad-hoc pipeline
+  - name: adhoc-analytics
+    version: "1.0.0"
+    tags:
+      - analytics
+      - manual
+    description: "Manual ad-hoc analytics pipeline run"
+    entrypoint: analytics/flows/main_pipeline.py:analytics_pipeline
+    work_pool:
+      name: analytics-pool
+    parameters:
+      full_backfill: false
+      full_refresh: false
+
+  # Full backfill (initial setup or recovery)
+  - name: full-backfill
+    version: "1.0.0"
+    tags:
+      - analytics
+      - manual
+      - backfill
+    description: "Full historical backfill (use for initial setup)"
+    entrypoint: analytics/flows/main_pipeline.py:analytics_pipeline
+    work_pool:
+      name: analytics-pool
+    parameters:
+      full_backfill: true
+      full_refresh: true

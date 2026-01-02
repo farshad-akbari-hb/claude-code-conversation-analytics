@@ -20,6 +20,12 @@ Operational procedures for the Claude Analytics Platform.
 # View Prefect dashboard
 open http://localhost:4200
 
+# Check deployment status
+make status
+
+# View worker logs
+make logs
+
 # Check recent flow runs
 docker-compose -f docker-compose.analytics.yml exec analytics-worker \
   prefect flow-run ls --limit 10
@@ -66,7 +72,7 @@ print('Sessions:', conn.execute('SELECT COUNT(*) FROM marts.dim_sessions').fetch
 
 2. Identify which task failed:
    ```bash
-   docker-compose -f docker-compose.analytics.yml logs analytics-worker | grep -i error
+   make logs | grep -i error
    ```
 
 3. Common issues:
@@ -80,8 +86,11 @@ print('Sessions:', conn.execute('SELECT COUNT(*) FROM marts.dim_sessions').fetch
 
 4. Retry the flow:
    ```bash
-   docker-compose -f docker-compose.analytics.yml exec analytics-worker \
-     python -m analytics.cli pipeline
+   # Via Makefile
+   make run-adhoc
+
+   # Or direct CLI
+   make pipeline
    ```
 
 ### No Data in Metabase
@@ -181,7 +190,7 @@ When data is corrupted or needs complete refresh:
 
 ```bash
 # Stop services
-docker-compose -f docker-compose.analytics.yml stop analytics-worker
+make down
 
 # Remove DuckDB (DESTRUCTIVE)
 docker volume rm analytics_duckdb-data
@@ -189,11 +198,11 @@ docker volume rm analytics_duckdb-data
 # Remove Parquet files
 docker volume rm analytics_analytics-data
 
-# Restart and run full backfill
-docker-compose -f docker-compose.analytics.yml up -d analytics-worker
+# Restart infrastructure
+make up-prefect
 
-docker-compose -f docker-compose.analytics.yml exec analytics-worker \
-  python -m analytics.cli pipeline --full-backfill --full-refresh
+# Run full backfill
+make run-backfill
 ```
 
 ### Restore from MongoDB
@@ -213,24 +222,44 @@ cd dbt && dbt run --full-refresh
 
 ### Reset Prefect State
 
-If Prefect has stale state:
+If Prefect has stale state or work pool issues:
 
 ```bash
 # Stop services
-docker-compose -f docker-compose.analytics.yml down
+make down
 
 # Remove Prefect database
 docker volume rm analytics_prefect-db-data
 
-# Restart and re-register deployments
-docker-compose -f docker-compose.analytics.yml up -d
+# Restart infrastructure
+make up-prefect
 
-# Wait for Prefect to start
+# Wait for Prefect server to be healthy
 sleep 30
 
-# Apply deployments
-docker-compose -f docker-compose.analytics.yml exec analytics-worker \
-  python -m analytics.flows.deployment
+# Re-deploy flows (work pool is auto-created by prefect-worker)
+make deploy
+
+# Verify deployments
+make status
+```
+
+### Worker Not Processing Jobs
+
+If scheduled runs aren't executing:
+
+```bash
+# Check worker status
+make logs
+
+# Verify work pool exists in Prefect UI
+open http://localhost:4200/work-pools
+
+# Restart worker
+docker-compose -f docker-compose.analytics.yml restart prefect-worker
+
+# Re-deploy if needed
+make deploy
 ```
 
 ---
@@ -276,6 +305,19 @@ docker-compose -f docker-compose.analytics.yml exec analytics-worker \
 
 ## Monitoring
 
+### Scheduled Deployments
+
+The following pipelines run automatically:
+
+| Deployment | Schedule | Description |
+|------------|----------|-------------|
+| `hourly-analytics` | Every hour | Incremental sync from MongoDB |
+| `daily-full-refresh` | 2:00 AM | Full table refresh |
+
+Manual deployments (trigger with `make run-*`):
+- `adhoc-analytics` - On-demand incremental run
+- `full-backfill` - Historical data reload
+
 ### Key Metrics to Watch
 
 | Metric | Healthy Range | Action if Exceeded |
@@ -297,6 +339,7 @@ Configure alerts in Prefect for:
 
 | Component | Location |
 |-----------|----------|
+| Prefect Worker | `make logs` or `docker logs prefect-worker` |
 | Analytics Worker | `docker logs analytics-worker` |
 | Prefect Server | `docker logs prefect-server` |
 | Metabase | `docker logs metabase` |

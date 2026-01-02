@@ -6,7 +6,7 @@ services:
   # Prefect Server - Workflow orchestration
   # ==========================================================================
   prefect-server:
-    image: prefecthq/prefect:2-python3.11
+    image: prefecthq/prefect:2.19-python3.11
     container_name: prefect-server
     command: prefect server start --host 0.0.0.0
     environment:
@@ -48,7 +48,7 @@ services:
       - analytics-network
 
   # ==========================================================================
-  # Analytics Worker - Runs extraction, loading, and dbt
+  # Analytics Worker - For manual CLI usage and ad-hoc commands
   # ==========================================================================
   analytics-worker:
     build:
@@ -56,7 +56,6 @@ services:
       dockerfile: Dockerfile
     container_name: analytics-worker
     # Keep container running for manual CLI usage
-    # For scheduled runs, configure Prefect work pool separately
     command: tail -f /dev/null
     environment:
       # MongoDB connection
@@ -91,6 +90,61 @@ services:
       - analytics-network
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  # ==========================================================================
+  # Prefect Worker - Polls work pool and executes scheduled flows
+  # ==========================================================================
+  prefect-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: prefect-worker
+    command: >
+      sh -c "
+        echo 'Waiting for Prefect server to be ready...' &&
+        sleep 10 &&
+        echo 'Creating work pool analytics-pool...' &&
+        prefect work-pool create analytics-pool --type process --overwrite || true &&
+        echo 'Starting worker...' &&
+        prefect worker start --pool analytics-pool
+      "
+    environment:
+      # Prefect configuration
+      - PREFECT_API_URL=http://prefect-server:4200/api
+
+      # MongoDB connection
+      - MONGO_URI=${MONGO_URI:-mongodb://host.docker.internal:27017}
+      - MONGO_DB=${MONGO_DB:-claude_logs}
+      - MONGO_COLLECTION=${MONGO_COLLECTION:-conversations}
+
+      # DuckDB configuration
+      - DUCKDB_PATH=/duckdb/analytics.db
+      - DUCKDB_THREADS=4
+
+      # Data directories
+      - DATA_DIR=/data
+      - RAW_DIR=/data/raw
+      - INCREMENTAL_DIR=/data/incremental
+      - DEAD_LETTER_DIR=/data/dead_letter
+
+      # dbt configuration
+      - DBT_PROJECT_DIR=/app/dbt
+      - DBT_PROFILES_DIR=/app/dbt
+      - DBT_TARGET=prod
+
+      # Logging
+      - LOG_LEVEL=INFO
+    volumes:
+      - analytics-data:/data
+      - duckdb-data:/duckdb
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+    networks:
+      - analytics-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
 
   # ==========================================================================
   # Metabase - BI and Visualization

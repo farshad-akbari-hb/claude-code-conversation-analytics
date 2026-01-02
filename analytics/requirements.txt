@@ -11,16 +11,16 @@ pandas>=2.0
 # DuckDB OLAP database
 duckdb>=0.10
 
-# Orchestration (Prefect)
-prefect>=2.14
+# Orchestration (Prefect) - pinned to match server version
+prefect==2.19.9
 
 # Data quality (Great Expectations)
 great-expectations>=0.18
 
 # Configuration management
 python-dotenv>=1.0
-pydantic>=2.0
-pydantic-settings>=2.0
+pydantic>=2.0,<2.10
+pydantic-settings>=2.0,<2.7
 
 # CLI interface
 typer>=0.9
