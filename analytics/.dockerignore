@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.eggs/
+*.egg-info/
+*.egg
+.venv/
+venv/
+ENV/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# Great Expectations
+great_expectations/uncommitted/
+
+# Local data (should be mounted as volumes)
+data/
+
+# Documentation
+*.md
+docs/
+
+# Local config
+.env
+.env.*
+!.env.analytics.example
+
+# Tests
+tests/
+
+# Build artifacts
+dist/
+build/

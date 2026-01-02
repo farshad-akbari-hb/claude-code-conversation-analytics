@@ -1,0 +1,186 @@
+# Docker Compose for Claude Analytics Platform
+# Includes: Prefect, Analytics Worker, Metabase
+
+version: '3.8'
+
+services:
+  # ==========================================================================
+  # Prefect Server - Workflow orchestration
+  # ==========================================================================
+  prefect-server:
+    image: prefecthq/prefect:2-python3.11
+    container_name: prefect-server
+    command: prefect server start
+    environment:
+      - PREFECT_UI_API_URL=http://localhost:4200/api
+      - PREFECT_API_DATABASE_CONNECTION_URL=postgresql+asyncpg://prefect:prefect@prefect-db:5432/prefect
+    ports:
+      - "4200:4200"
+    depends_on:
+      prefect-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4200/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - analytics-network
+
+  # ==========================================================================
+  # Prefect Database - PostgreSQL for Prefect metadata
+  # ==========================================================================
+  prefect-db:
+    image: postgres:15-alpine
+    container_name: prefect-db
+    environment:
+      - POSTGRES_USER=prefect
+      - POSTGRES_PASSWORD=prefect
+      - POSTGRES_DB=prefect
+    volumes:
+      - prefect-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prefect"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - analytics-network
+
+  # ==========================================================================
+  # Analytics Worker - Runs extraction, loading, and dbt
+  # ==========================================================================
+  analytics-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: analytics-worker
+    command: prefect agent start --pool analytics-pool
+    environment:
+      # MongoDB connection
+      - MONGO_URI=${MONGO_URI:-mongodb://host.docker.internal:27017}
+      - MONGO_DB=${MONGO_DB:-claude_logs}
+      - MONGO_COLLECTION=${MONGO_COLLECTION:-conversations}
+
+      # DuckDB configuration
+      - DUCKDB_PATH=/duckdb/analytics.db
+      - DUCKDB_THREADS=4
+
+      # Data directories
+      - DATA_DIR=/data
+      - RAW_DIR=/data/raw
+      - INCREMENTAL_DIR=/data/incremental
+      - DEAD_LETTER_DIR=/data/dead_letter
+
+      # dbt configuration
+      - DBT_PROJECT_DIR=/app/dbt
+      - DBT_PROFILES_DIR=/app/dbt
+      - DBT_TARGET=prod
+
+      # Prefect configuration
+      - PREFECT_API_URL=http://prefect-server:4200/api
+
+      # Logging
+      - LOG_LEVEL=INFO
+    volumes:
+      - analytics-data:/data
+      - duckdb-data:/duckdb
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+    networks:
+      - analytics-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ==========================================================================
+  # Metabase - BI and Visualization
+  # ==========================================================================
+  metabase:
+    image: metabase/metabase:latest
+    container_name: metabase
+    environment:
+      - MB_DB_TYPE=postgres
+      - MB_DB_DBNAME=metabase
+      - MB_DB_PORT=5432
+      - MB_DB_USER=metabase
+      - MB_DB_PASS=metabase
+      - MB_DB_HOST=metabase-db
+      - MB_EMOJI_IN_LOGS=false
+    ports:
+      - "3001:3000"
+    volumes:
+      - duckdb-data:/duckdb:ro
+    depends_on:
+      metabase-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - analytics-network
+
+  # ==========================================================================
+  # Metabase Database - PostgreSQL for Metabase metadata
+  # ==========================================================================
+  metabase-db:
+    image: postgres:15-alpine
+    container_name: metabase-db
+    environment:
+      - POSTGRES_USER=metabase
+      - POSTGRES_PASSWORD=metabase
+      - POSTGRES_DB=metabase
+    volumes:
+      - metabase-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U metabase"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - analytics-network
+
+  # ==========================================================================
+  # dbt Docs - Documentation server
+  # ==========================================================================
+  dbt-docs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dbt-docs
+    command: >
+      sh -c "cd /app/dbt && dbt docs generate && dbt docs serve --port 8080"
+    environment:
+      - DUCKDB_PATH=/duckdb/analytics.db
+      - DBT_PROJECT_DIR=/app/dbt
+      - DBT_PROFILES_DIR=/app/dbt
+      - DBT_TARGET=prod
+    ports:
+      - "8080:8080"
+    volumes:
+      - duckdb-data:/duckdb:ro
+    networks:
+      - analytics-network
+
+# ==========================================================================
+# Networks
+# ==========================================================================
+networks:
+  analytics-network:
+    driver: bridge
+
+# ==========================================================================
+# Volumes
+# ==========================================================================
+volumes:
+  prefect-db-data:
+    driver: local
+  metabase-db-data:
+    driver: local
+  analytics-data:
+    driver: local
+  duckdb-data:
+    driver: local

@@ -23,6 +23,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# Install dbt dependencies
+RUN pip install --no-cache-dir dbt-core dbt-duckdb
+
 # =============================================================================
 # Stage 2: Runtime - Final production image
 # =============================================================================
@@ -45,6 +48,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
+# dbt environment
+ENV DBT_PROJECT_DIR=/app/dbt \
+    DBT_PROFILES_DIR=/app/dbt \
+    DBT_TARGET=prod
+
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash analytics && \
     chown -R analytics:analytics /app
@@ -55,6 +63,9 @@ RUN mkdir -p /data/raw /data/incremental /data/dead_letter /duckdb && \
 
 # Copy application code
 COPY --chown=analytics:analytics . .
+
+# Install dbt packages
+RUN cd /app/dbt && dbt deps --profiles-dir /app/dbt
 
 # Switch to non-root user
 USER analytics
