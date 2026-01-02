@@ -1,7 +1,7 @@
 # Claude Analytics Platform - Makefile
 # Convenience commands for managing the analytics pipeline
 
-.PHONY: up up-prefect down deploy worker-local logs status \
+.PHONY: up up-prefect down rebuild fresh deploy worker-local logs status \
         run-adhoc run-backfill run-daily pipeline shell help
 
 # Default target
@@ -12,6 +12,8 @@ help:
 	@echo "  make up           - Start all services (Prefect, Worker, Metabase)"
 	@echo "  make up-prefect   - Start only Prefect infrastructure"
 	@echo "  make down         - Stop all services"
+	@echo "  make rebuild      - Rebuild all containers (no cache)"
+	@echo "  make fresh        - Full reset: down + rebuild + up + deploy"
 	@echo "  make logs         - View worker logs (Ctrl+C to exit)"
 	@echo "  make shell        - Open shell in analytics-worker container"
 	@echo ""
@@ -55,6 +57,20 @@ up-prefect:
 # Stop all services
 down:
 	docker-compose -f docker-compose.analytics.yml down
+
+# Rebuild all containers with no cache (ensures matching versions)
+rebuild:
+	@echo "Rebuilding all containers (no cache)..."
+	docker-compose -f docker-compose.analytics.yml build --no-cache
+	@echo ""
+	@echo "Rebuild complete. Run 'make up' to start services."
+
+# Fresh start: stop, rebuild, start, and deploy (clean slate)
+fresh: down rebuild up
+	@echo ""
+	@echo "Waiting for services to be healthy (20s)..."
+	@sleep 20
+	@$(MAKE) deploy
 
 # View worker logs
 logs:

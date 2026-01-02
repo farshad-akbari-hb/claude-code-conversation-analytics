@@ -102,9 +102,9 @@ services:
     command: >
       sh -c "
         echo 'Waiting for Prefect server to be ready...' &&
-        sleep 10 &&
-        echo 'Creating work pool analytics-pool...' &&
-        prefect work-pool create analytics-pool --type process --overwrite || true &&
+        sleep 15 &&
+        echo 'Creating work pool analytics-pool (if not exists)...' &&
+        prefect work-pool create analytics-pool --type process 2>/dev/null || echo 'Work pool already exists' &&
         echo 'Starting worker...' &&
         prefect worker start --pool analytics-pool
       "

@@ -51,12 +51,7 @@ def extract_task(
 
     logger.info("Starting MongoDB extraction")
 
-    extractor = MongoExtractor(
-        mongo_uri=settings.mongo.uri,
-        mongo_db=settings.mongo.database,
-        collection_name=settings.mongo.collection,
-        output_dir=Path(settings.data.raw_dir),
-    )
+    extractor = MongoExtractor(settings=settings)
 
     try:
         if full_backfill:
@@ -98,7 +93,7 @@ def load_task(
 
     logger.info("Starting DuckDB loading")
 
-    loader = DuckDBLoader(db_path=Path(settings.duckdb.path))
+    loader = DuckDBLoader(settings=settings)
 
     try:
         # Ensure database and schema exist
