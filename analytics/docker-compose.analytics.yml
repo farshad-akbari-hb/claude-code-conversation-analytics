@@ -56,7 +56,7 @@ services:
       dockerfile: Dockerfile
     container_name: analytics-worker
     # Keep container running for manual CLI usage
-    # Fduck l separately
+    # For scheduled runs, configure Prefect work pool separately
     command: tail -f /dev/null
     environment:
       # MongoDB connection
@@ -94,11 +94,15 @@ services:
 
   # ==========================================================================
   # Metabase - BI and Visualization
+  # Uses custom image with DuckDB driver pre-installed (glibc-based)
   # ==========================================================================
   metabase:
-    image: metabase/metabase:latest
+    build:
+      context: ./metabase
+      dockerfile: Dockerfile
     container_name: metabase
     environment:
+      # PostgreSQL for Metabase metadata
       - MB_DB_TYPE=postgres
       - MB_DB_DBNAME=metabase
       - MB_DB_PORT=5432
@@ -115,11 +119,11 @@ services:
       metabase-db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 90s
+      start_period: 120s
     networks:
       - analytics-network
 
