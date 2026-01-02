@@ -1,0 +1,99 @@
+# Claude Analytics dbt Project
+# https://docs.getdbt.com/reference/dbt_project.yml
+
+name: 'claude_analytics'
+version: '1.0.0'
+config-version: 2
+
+# Project paths
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+# Build artifacts
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# Profile to use (defined in profiles.yml)
+profile: 'claude_analytics'
+
+# Model configurations by folder
+models:
+  claude_analytics:
+    # Staging layer (Bronze) - Views for quick iteration
+    staging:
+      +materialized: view
+      +schema: staging
+      +tags: ['staging', 'bronze']
+
+    # Intermediate layer (Silver) - Ephemeral or views
+    intermediate:
+      +materialized: view
+      +schema: intermediate
+      +tags: ['intermediate', 'silver']
+
+    # Marts layer (Gold) - Tables for performance
+    marts:
+      +materialized: table
+      +schema: marts
+      +tags: ['marts', 'gold']
+
+      # Aggregates are always tables
+      aggregates:
+        +materialized: table
+        +tags: ['aggregates']
+
+# Seed configurations
+seeds:
+  claude_analytics:
+    +schema: seeds
+
+# Variable defaults
+vars:
+  # Date range for development (can be overridden)
+  start_date: '2024-01-01'
+  end_date: '2099-12-31'
+
+  # Task category classification patterns
+  task_patterns:
+    bug_fix:
+      - 'bug'
+      - 'fix'
+      - 'error'
+      - 'issue'
+      - 'broken'
+      - 'crash'
+    feature:
+      - 'add'
+      - 'create'
+      - 'implement'
+      - 'new'
+      - 'feature'
+      - 'build'
+    refactor:
+      - 'refactor'
+      - 'restructure'
+      - 'reorganize'
+      - 'clean up'
+      - 'simplify'
+    testing:
+      - 'test'
+      - 'spec'
+      - 'validate'
+      - 'verify'
+    documentation:
+      - 'doc'
+      - 'readme'
+      - 'comment'
+      - 'explain'
+
+# Quoting configuration for DuckDB
+quoting:
+  database: false
+  schema: false
+  identifier: false

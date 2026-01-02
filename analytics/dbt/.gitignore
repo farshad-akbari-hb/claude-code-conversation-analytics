@@ -1,0 +1,10 @@
+# dbt build artifacts
+target/
+dbt_packages/
+logs/
+
+# dbt Cloud IDE
+dbt_modules/
+
+# Environment-specific profiles
+# Keep profiles.yml in repo for development, override with env vars in production

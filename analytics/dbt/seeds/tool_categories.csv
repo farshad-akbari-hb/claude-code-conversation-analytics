@@ -1,0 +1,16 @@
+tool_name,tool_category,description
+Read,file_operations,Read file contents
+Write,file_operations,Write file contents
+Edit,file_operations,Edit file contents
+NotebookEdit,file_operations,Edit Jupyter notebook cells
+MultiEdit,file_operations,Multiple file edits in one operation
+Bash,shell,Execute shell commands
+Glob,search,Search files by glob pattern
+Grep,search,Search file contents with regex
+Task,agent,Spawn sub-agent for complex tasks
+TodoRead,planning,Read todo list
+TodoWrite,planning,Write/update todo list
+WebFetch,network,Fetch web page content
+WebSearch,network,Search the web
+AskFollowupQuestion,interaction,Ask user for clarification
+AttemptCompletion,interaction,Signal task completion

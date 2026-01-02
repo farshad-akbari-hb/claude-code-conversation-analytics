@@ -1,0 +1,74 @@
+# Source Definitions for Claude Analytics
+# https://docs.getdbt.com/docs/build/sources
+
+version: 2
+
+sources:
+  - name: raw
+    description: "Raw data loaded from MongoDB via Parquet extraction"
+    database: "{{ env_var('DUCKDB_PATH', 'analytics') | replace('.db', '') }}"
+    schema: raw
+
+    # Freshness checks
+    freshness:
+      warn_after: {count: 24, period: hour}
+      error_after: {count: 48, period: hour}
+    loaded_at_field: extracted_at
+
+    tables:
+      - name: conversations
+        description: |
+          Raw conversation entries extracted from MongoDB.
+          Each row represents a single message, tool call, or other entry
+          from a Claude Code conversation session.
+
+        columns:
+          - name: _id
+            description: "Unique identifier from MongoDB (ObjectId as string)"
+            tests:
+              - unique
+              - not_null
+
+          - name: type
+            description: |
+              Entry type indicating the kind of conversation element:
+              - 'user': Human message
+              - 'assistant': Claude's response
+              - 'tool_use': Tool invocation by Claude
+              - 'tool_result': Result of tool execution
+            tests:
+              - not_null
+
+          - name: session_id
+            description: "Claude session identifier grouping related messages"
+
+          - name: project_id
+            description: "Project/workspace identifier from file path"
+
+          - name: timestamp
+            description: "When the entry was created (from Claude logs)"
+
+          - name: ingested_at
+            description: "When the entry was synced to MongoDB"
+
+          - name: extracted_at
+            description: "When the entry was extracted to Parquet/DuckDB"
+            tests:
+              - not_null
+
+          - name: message_role
+            description: "Role from message content: 'user', 'assistant', or null"
+
+          - name: message_content
+            description: "Flattened text content of the message"
+
+          - name: message_raw
+            description: "Original JSON of complex message structures"
+
+          - name: source_file
+            description: "Path to the source JSONL file"
+
+          - name: date
+            description: "Date partition key (derived from timestamp)"
+            tests:
+              - not_null

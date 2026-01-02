@@ -1,0 +1,31 @@
+# dbt Profiles for Claude Analytics
+# https://docs.getdbt.com/docs/core/connect-data-platform/profiles.yml
+
+claude_analytics:
+  target: dev
+
+  outputs:
+    # Development environment - local DuckDB file
+    dev:
+      type: duckdb
+      path: "{{ env_var('DUCKDB_PATH', '/duckdb/analytics.db') }}"
+      threads: 4
+      # Extensions to load
+      extensions:
+        - parquet
+
+    # Production environment - same structure, different settings
+    prod:
+      type: duckdb
+      path: "{{ env_var('DUCKDB_PATH', '/duckdb/analytics.db') }}"
+      threads: 8
+      extensions:
+        - parquet
+
+    # In-memory for testing
+    test:
+      type: duckdb
+      path: ":memory:"
+      threads: 1
+      extensions:
+        - parquet

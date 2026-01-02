@@ -1,0 +1,48 @@
+# Seed Definitions
+# https://docs.getdbt.com/docs/build/seeds
+
+version: 2
+
+seeds:
+  - name: tool_categories
+    description: |
+      Reference table mapping Claude Code tool names to categories.
+      Used to classify tool usage patterns in analytics.
+
+    config:
+      column_types:
+        tool_name: varchar
+        tool_category: varchar
+        description: varchar
+
+    columns:
+      - name: tool_name
+        description: "Name of the Claude Code tool"
+        tests:
+          - unique
+          - not_null
+
+      - name: tool_category
+        description: |
+          Category grouping for the tool:
+          - file_operations: Read, Write, Edit operations
+          - shell: Bash command execution
+          - search: Glob and Grep searches
+          - agent: Sub-agent spawning
+          - planning: Todo management
+          - network: Web fetching and searching
+          - interaction: User interaction tools
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - file_operations
+                - shell
+                - search
+                - agent
+                - planning
+                - network
+                - interaction
+
+      - name: description
+        description: "Human-readable description of the tool"
