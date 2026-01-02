@@ -160,18 +160,18 @@ analytics/
 
 ---
 
-### Phase 8: dbt Mart Models (Gold) - Facts
+### Phase 8: dbt Mart Models (Gold) - Facts ✅ COMPLETED
 **Goal**: Create fact tables for star schema
 
 **Tasks**:
-- [ ] 8.1 Create `models/marts/fct_messages.sql`
+- [x] 8.1 Create `models/marts/fct_messages.sql`
   - Fact table at message grain with FK to dimensions
-- [ ] 8.2 Create `models/marts/fct_tool_calls.sql`
+- [x] 8.2 Create `models/marts/fct_tool_calls.sql`
   - Fact table at tool call grain
-- [ ] 8.3 Create `models/marts/fct_file_operations.sql`
+- [x] 8.3 Create `models/marts/fct_file_operations.sql`
   - Fact table for file operations (Read/Write/Edit)
-- [ ] 8.4 Add incremental strategy configurations
-- [ ] 8.5 Create fact table tests
+- [x] 8.4 Add incremental strategy configurations
+- [x] 8.5 Create fact table tests
 
 ---
 

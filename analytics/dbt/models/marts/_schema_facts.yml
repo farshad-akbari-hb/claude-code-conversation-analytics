@@ -1,0 +1,168 @@
+# Marts Layer Schema - Facts
+# Gold layer: Star schema fact tables
+
+version: 2
+
+models:
+  - name: fct_messages
+    description: |
+      Message-level fact table for conversation analytics.
+      One row per user or assistant message.
+
+    columns:
+      - name: message_key
+        description: "Primary key (MD5 hash of conversation_id)"
+        tests:
+          - unique
+          - not_null
+
+      - name: session_key
+        description: "Foreign key to dim_sessions"
+        tests:
+          - relationships:
+              to: ref('dim_sessions')
+              field: session_key
+
+      - name: date_key
+        description: "Foreign key to dim_date"
+        tests:
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+
+      - name: role
+        description: "Message role: user or assistant"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['user', 'assistant']
+
+      - name: content_length
+        description: "Length of message content in characters"
+        tests:
+          - not_null
+
+      - name: task_category
+        description: "Classified task type"
+        tests:
+          - accepted_values:
+              values:
+                - bug_fix
+                - feature
+                - refactor
+                - testing
+                - documentation
+                - review
+                - other
+
+      - name: effective_timestamp
+        description: "When the message was created"
+        tests:
+          - not_null
+
+  - name: fct_tool_calls
+    description: |
+      Tool call fact table for AI tool usage analytics.
+      One row per tool invocation or result.
+
+    columns:
+      - name: tool_call_key
+        description: "Primary key (MD5 hash of conversation_id)"
+        tests:
+          - unique
+          - not_null
+
+      - name: session_key
+        description: "Foreign key to dim_sessions"
+        tests:
+          - relationships:
+              to: ref('dim_sessions')
+              field: session_key
+
+      - name: tool_key
+        description: "Foreign key to dim_tools"
+        tests:
+          - relationships:
+              to: ref('dim_tools')
+              field: tool_key
+
+      - name: date_key
+        description: "Foreign key to dim_date"
+        tests:
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+
+      - name: entry_type
+        description: "Tool entry type"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['tool_use', 'tool_result']
+
+      - name: tool_name
+        description: "Name of the tool"
+        tests:
+          - not_null
+
+      - name: tool_category
+        description: "Tool category classification"
+        tests:
+          - not_null
+
+      - name: effective_timestamp
+        description: "When the tool was called"
+        tests:
+          - not_null
+
+  - name: fct_file_operations
+    description: |
+      File operation fact table for code activity analytics.
+      Filtered subset of tool calls for file-related operations only.
+
+    columns:
+      - name: file_operation_key
+        description: "Primary key (MD5 hash of conversation_id)"
+        tests:
+          - unique
+          - not_null
+
+      - name: session_key
+        description: "Foreign key to dim_sessions"
+        tests:
+          - relationships:
+              to: ref('dim_sessions')
+              field: session_key
+
+      - name: tool_key
+        description: "Foreign key to dim_tools"
+        tests:
+          - relationships:
+              to: ref('dim_tools')
+              field: tool_key
+
+      - name: date_key
+        description: "Foreign key to dim_date"
+        tests:
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+
+      - name: operation_type
+        description: "Type of file operation"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['read', 'write', 'edit', 'multi_edit', 'other']
+
+      - name: tool_name
+        description: "Underlying tool name"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Read', 'Write', 'Edit', 'NotebookEdit', 'MultiEdit']
+
+      - name: effective_timestamp
+        description: "When the file operation occurred"
+        tests:
+          - not_null
