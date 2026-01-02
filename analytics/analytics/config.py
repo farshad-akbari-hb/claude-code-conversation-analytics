@@ -15,7 +15,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class MongoSettings(BaseSettings):
     """MongoDB source configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="MONGO_")
+    model_config = SettingsConfigDict(
+        env_prefix="MONGO_",
+        env_file=".env.analytics",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     uri: str = Field(
         default="mongodb://localhost:27017",

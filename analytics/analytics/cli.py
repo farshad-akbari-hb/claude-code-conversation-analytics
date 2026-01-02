@@ -354,20 +354,9 @@ def pipeline(
         if not skip_extract:
             console.print("[bold cyan]Step 1: Extract[/bold cyan]")
             try:
-                extractor = MongoExtractor(
-                    mongo_uri=settings.mongo.uri,
-                    mongo_db=settings.mongo.database,
-                    collection_name=settings.mongo.collection,
-                    output_dir=Path(settings.data.raw_dir),
-                )
-
-                if full_backfill:
-                    stats = extractor.full_extract()
-                else:
-                    stats = extractor.incremental_extract()
-
-                console.print(f"  [green]✓[/green] Extraction complete: {stats}")
-                extractor.close()
+                extractor = MongoExtractor(settings)
+                files = extractor.extract(full_backfill=full_backfill)
+                console.print(f"  [green]✓[/green] Extraction complete: {len(files)} files")
             except Exception as e:
                 console.print(f"  [red]✗[/red] Extraction failed: {e}")
                 raise typer.Exit(1)
@@ -378,16 +367,13 @@ def pipeline(
         if not skip_load:
             console.print("[bold cyan]Step 2: Load[/bold cyan]")
             try:
-                loader = DuckDBLoader(db_path=Path(settings.duckdb.path))
-                loader.create_database()
-
-                if full_refresh:
-                    stats = loader.load_from_parquet(str(settings.data.raw_dir))
-                else:
-                    stats = loader.upsert_incremental(str(settings.data.raw_dir))
-
-                console.print(f"  [green]✓[/green] Loading complete: {stats}")
-                loader.close()
+                loader = DuckDBLoader(settings)
+                rows = loader.load_from_parquet(
+                    settings.data.raw_dir,
+                    full_refresh=full_refresh,
+                )
+                console.print(f"  [green]✓[/green] Loading complete: {rows} rows")
+                loader.disconnect()
             except Exception as e:
                 console.print(f"  [red]✗[/red] Loading failed: {e}")
                 raise typer.Exit(1)

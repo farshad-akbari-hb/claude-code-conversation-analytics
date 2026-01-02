@@ -55,7 +55,9 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: analytics-worker
-    command: prefect agent start --pool analytics-pool
+    # Keep container running for manual CLI usage
+    # For scheduled runs, configure Prefect work pool separately
+    command: tail -f /dev/null
     environment:
       # MongoDB connection
       - MONGO_URI=${MONGO_URI:-mongodb://host.docker.internal:27017}
@@ -85,9 +87,6 @@ services:
     volumes:
       - analytics-data:/data
       - duckdb-data:/duckdb
-    depends_on:
-      prefect-server:
-        condition: service_healthy
     networks:
       - analytics-network
     extra_hosts:
