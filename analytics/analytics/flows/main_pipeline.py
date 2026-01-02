@@ -65,7 +65,7 @@ def extract_task(
         return stats
 
     finally:
-        extractor.close()
+        extractor.disconnect()
 
 
 @task(
@@ -118,7 +118,7 @@ def load_task(
         }
 
     finally:
-        loader.close()
+        loader.disconnect()
 
 
 @task(
