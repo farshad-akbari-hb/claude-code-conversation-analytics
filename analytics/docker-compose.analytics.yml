@@ -56,7 +56,7 @@ services:
       dockerfile: Dockerfile
     container_name: analytics-worker
     # Keep container running for manual CLI usage
-    # For scheduled runs, configure Prefect work pool separately
+    # Fduck l separately
     command: tail -f /dev/null
     environment:
       # MongoDB connection

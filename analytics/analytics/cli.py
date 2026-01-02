@@ -243,12 +243,13 @@ def transform(
     console.print(f"  Mode: {'Full Refresh' if full_refresh else 'Incremental'}")
     console.print()
 
-    # Build dbt run command
+    # Build dbt build command (runs seeds, models, and tests in DAG order)
     cmd = [
-        "dbt", "run",
+        "dbt", "build",
         "--project-dir", str(settings.dbt.project_dir),
         "--profiles-dir", str(settings.dbt.profiles_dir),
         "--target", settings.dbt.target,
+        "--exclude", "test_type:data",  # Skip data tests for speed
     ]
 
     if full_refresh:
@@ -258,7 +259,7 @@ def transform(
         cmd.extend(["--select", models])
 
     try:
-        console.print("[dim]Running dbt...[/dim]\n")
+        console.print("[dim]Running dbt build...[/dim]\n")
         result = subprocess.run(
             cmd,
             capture_output=True,
@@ -270,7 +271,7 @@ def transform(
             console.print(result.stdout)
 
         if result.returncode != 0:
-            console.print(f"[bold red]dbt run failed:[/bold red]")
+            console.print(f"[bold red]dbt build failed:[/bold red]")
             if result.stderr:
                 console.print(result.stderr)
             raise typer.Exit(1)
@@ -385,11 +386,13 @@ def pipeline(
             console.print("[bold cyan]Step 3: Transform[/bold cyan]")
             import subprocess
 
+            # Use 'dbt build' which runs seeds, models, and tests in DAG order
             cmd = [
-                "dbt", "run",
+                "dbt", "build",
                 "--project-dir", str(settings.dbt.project_dir),
                 "--profiles-dir", str(settings.dbt.profiles_dir),
                 "--target", settings.dbt.target,
+                "--exclude", "test_type:data",  # Skip data tests for speed
             ]
 
             if full_refresh:
