@@ -1,0 +1,120 @@
+{
+  "questions": [
+    {
+      "name": "Sessions Over Time",
+      "description": "Daily session count trend",
+      "query": "SELECT date_key, session_count FROM marts.agg_daily_summary ORDER BY date_key",
+      "visualization": "line",
+      "dashboard": "Developer Productivity"
+    },
+    {
+      "name": "Average Session Duration",
+      "description": "Average session duration in minutes",
+      "query": "SELECT AVG(duration_minutes) as avg_duration FROM marts.dim_sessions",
+      "visualization": "scalar",
+      "dashboard": "Developer Productivity"
+    },
+    {
+      "name": "Active Hours Heatmap",
+      "description": "Activity by hour and day of week",
+      "query": "SELECT hour_of_day, day_name, total_activity FROM marts.agg_hourly_activity",
+      "visualization": "pivot",
+      "dashboard": "Developer Productivity"
+    },
+    {
+      "name": "Tool Usage Distribution",
+      "description": "Breakdown of tool usage by name",
+      "query": "SELECT tool_name, total_calls FROM marts.agg_tool_efficiency ORDER BY total_calls DESC",
+      "visualization": "pie",
+      "dashboard": "AI Interaction Patterns"
+    },
+    {
+      "name": "Tool Category Breakdown",
+      "description": "Tool usage grouped by category",
+      "query": "SELECT tool_category, SUM(total_calls) as calls FROM marts.agg_tool_efficiency GROUP BY tool_category ORDER BY calls DESC",
+      "visualization": "bar",
+      "dashboard": "AI Interaction Patterns"
+    },
+    {
+      "name": "Top 10 Most Used Tools",
+      "description": "Ranked list of most frequently used tools",
+      "query": "SELECT tool_name, total_calls, sessions_used FROM marts.agg_tool_efficiency ORDER BY popularity_rank LIMIT 10",
+      "visualization": "row",
+      "dashboard": "AI Interaction Patterns"
+    },
+    {
+      "name": "Project Activity Ranking",
+      "description": "Projects ranked by total messages",
+      "query": "SELECT project_id, total_messages, session_count FROM marts.dim_projects ORDER BY total_messages DESC LIMIT 15",
+      "visualization": "bar",
+      "dashboard": "Project Insights"
+    },
+    {
+      "name": "Project Status Distribution",
+      "description": "Breakdown by activity status",
+      "query": "SELECT activity_status, COUNT(*) as project_count FROM marts.dim_projects GROUP BY activity_status",
+      "visualization": "pie",
+      "dashboard": "Project Insights"
+    },
+    {
+      "name": "Daily Code Changes",
+      "description": "File operations over time",
+      "query": "SELECT date_key, file_reads, file_writes, file_edits FROM marts.agg_daily_summary WHERE has_activity = true ORDER BY date_key",
+      "visualization": "area",
+      "dashboard": "Project Insights"
+    },
+    {
+      "name": "File Types Worked On",
+      "description": "Distribution of file types by operations",
+      "query": "SELECT aggregation_key as file_type, total_operations FROM marts.agg_code_changes WHERE aggregation_level = 'by_file_type' ORDER BY total_operations DESC",
+      "visualization": "pie",
+      "dashboard": "Project Insights"
+    },
+    {
+      "name": "Task Category Distribution",
+      "description": "Classification of work by task type",
+      "query": "SELECT task_category, COUNT(*) as count FROM marts.fct_messages GROUP BY task_category ORDER BY count DESC",
+      "visualization": "pie",
+      "dashboard": "Developer Productivity"
+    },
+    {
+      "name": "Response Time Trends",
+      "description": "Average response time by session",
+      "query": "SELECT date_key, AVG(avg_response_time_seconds) as avg_response FROM marts.dim_sessions GROUP BY date_key ORDER BY date_key",
+      "visualization": "line",
+      "dashboard": "AI Interaction Patterns"
+    }
+  ],
+  "dashboards": [
+    {
+      "name": "Developer Productivity",
+      "description": "Session duration, activity patterns, and productivity metrics",
+      "questions": [
+        "Sessions Over Time",
+        "Average Session Duration",
+        "Active Hours Heatmap",
+        "Task Category Distribution"
+      ]
+    },
+    {
+      "name": "AI Interaction Patterns",
+      "description": "Tool usage, efficiency, and interaction analysis",
+      "questions": [
+        "Tool Usage Distribution",
+        "Tool Category Breakdown",
+        "Top 10 Most Used Tools",
+        "Response Time Trends"
+      ]
+    },
+    {
+      "name": "Project Insights",
+      "description": "Project activity, code changes, and file operations",
+      "questions": [
+        "Project Activity Ranking",
+        "Project Status Distribution",
+        "Daily Code Changes",
+        "File Types Worked On"
+      ]
+    }
+  ]
+}
