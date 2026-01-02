@@ -17,12 +17,21 @@ models:
           - not_null
 
       - name: entry_type
-        description: "Type of entry: user, assistant, tool_use, tool_result, or unknown"
+        description: "Type of entry: user, assistant, tool_use, tool_result, system, summary, file-history-snapshot, queue-operation, or unknown"
         tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['user', 'assistant', 'tool_use', 'tool_result', 'unknown']
+                values:
+                  - user
+                  - assistant
+                  - tool_use
+                  - tool_result
+                  - system
+                  - summary
+                  - file-history-snapshot
+                  - queue-operation
+                  - unknown
 
       - name: session_id
         description: "Session identifier grouping related entries"

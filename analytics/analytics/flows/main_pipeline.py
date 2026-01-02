@@ -8,12 +8,11 @@ This module defines the core ELT pipeline that orchestrates:
 """
 
 import subprocess
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from prefect import flow, task, get_run_logger
-from prefect.tasks import task_input_hash
 
 from analytics.config import get_settings
 from analytics.extractor import MongoExtractor
@@ -29,8 +28,6 @@ RETRY_DELAYS = [30, 60, 120]  # seconds
     description="Extract data from MongoDB to Parquet files",
     retries=3,
     retry_delay_seconds=RETRY_DELAYS,
-    cache_key_fn=task_input_hash,
-    cache_expiration=timedelta(hours=1),
 )
 def extract_task(
     full_backfill: bool = False,
@@ -151,9 +148,9 @@ def transform_task(
     dbt_project_dir = Path(settings.dbt.project_dir)
     dbt_profiles_dir = Path(settings.dbt.profiles_dir)
 
-    # Build dbt command
+    # Build dbt command (use 'build' to include seeds, models, and tests)
     cmd = [
-        "dbt", "run",
+        "dbt", "build",
         "--project-dir", str(dbt_project_dir),
         "--profiles-dir", str(dbt_profiles_dir),
         "--target", settings.dbt.target,
@@ -167,7 +164,7 @@ def transform_task(
 
     logger.info(f"Running dbt command: {' '.join(cmd)}")
 
-    # Run dbt
+    # Run dbt build (seeds + models + tests)
     result = subprocess.run(
         cmd,
         capture_output=True,
@@ -176,38 +173,14 @@ def transform_task(
     )
 
     if result.returncode != 0:
-        logger.error(f"dbt run failed: {result.stderr}")
-        raise RuntimeError(f"dbt run failed: {result.stderr}")
+        logger.error(f"dbt build failed:\n{result.stdout}")
+        raise RuntimeError(f"dbt build failed: {result.stdout}")
 
-    logger.info(f"dbt run output:\n{result.stdout}")
-
-    # Run dbt tests
-    test_cmd = [
-        "dbt", "test",
-        "--project-dir", str(dbt_project_dir),
-        "--profiles-dir", str(dbt_profiles_dir),
-        "--target", settings.dbt.target,
-    ]
-
-    if select:
-        test_cmd.extend(["--select", select])
-
-    logger.info("Running dbt tests")
-    test_result = subprocess.run(
-        test_cmd,
-        capture_output=True,
-        text=True,
-        cwd=str(dbt_project_dir),
-    )
-
-    if test_result.returncode != 0:
-        logger.warning(f"dbt test had failures: {test_result.stderr}")
+    logger.info(f"dbt build output:\n{result.stdout}")
 
     return {
-        "run_success": result.returncode == 0,
-        "test_success": test_result.returncode == 0,
-        "run_output": result.stdout,
-        "test_output": test_result.stdout,
+        "build_success": result.returncode == 0,
+        "output": result.stdout,
     }
 
 
