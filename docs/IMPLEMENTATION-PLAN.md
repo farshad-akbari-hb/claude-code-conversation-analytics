@@ -128,19 +128,19 @@ analytics/
 
 ---
 
-### Phase 6: dbt Intermediate Models (Silver)
+### Phase 6: dbt Intermediate Models (Silver) ✅ COMPLETED
 **Goal**: Create enriched and joined models
 
 **Tasks**:
-- [ ] 6.1 Create `models/intermediate/int_messages_enriched.sql`
+- [x] 6.1 Create `models/intermediate/int_messages_enriched.sql`
   - Add task category classification (bug_fix, feature, etc.)
   - Extract hour_of_day, day_of_week
-- [ ] 6.2 Create `models/intermediate/int_sessions_computed.sql`
+- [x] 6.2 Create `models/intermediate/int_sessions_computed.sql`
   - Compute session start/end times, duration
   - Count messages per session
-- [ ] 6.3 Create `models/intermediate/int_tool_usage.sql`
+- [x] 6.3 Create `models/intermediate/int_tool_usage.sql`
   - Parse tool call details, extract file paths
-- [ ] 6.4 Create `models/intermediate/schema.yml` with tests
+- [x] 6.4 Create `models/intermediate/schema.yml` with tests
 
 ---
 

@@ -1,0 +1,161 @@
+# Intermediate Layer Schema
+# Silver layer: business logic, enrichment, and computed fields
+
+version: 2
+
+models:
+  - name: int_messages_enriched
+    description: |
+      Enriched message data with temporal features and task classification.
+      Adds time-of-day analysis and content-based categorization.
+
+    columns:
+      - name: conversation_id
+        description: "Unique message identifier"
+        tests:
+          - unique
+          - not_null
+
+      - name: session_id
+        description: "Session containing this message"
+
+      - name: task_category
+        description: "Classified task type based on message content"
+        tests:
+          - accepted_values:
+              values:
+                - bug_fix
+                - feature
+                - refactor
+                - testing
+                - documentation
+                - review
+                - other
+
+      - name: time_of_day
+        description: "Time classification: morning, afternoon, evening, night"
+        tests:
+          - accepted_values:
+              values: ['morning', 'afternoon', 'evening', 'night']
+
+      - name: day_type
+        description: "Weekday or weekend"
+        tests:
+          - accepted_values:
+              values: ['weekday', 'weekend']
+
+      - name: hour_of_day
+        description: "Hour (0-23) when message was sent"
+        tests:
+          - not_null
+
+      - name: day_of_week
+        description: "Day of week (0=Sunday, 6=Saturday)"
+        tests:
+          - not_null
+
+  - name: int_sessions_computed
+    description: |
+      Aggregated session-level metrics including duration, message counts,
+      tool usage statistics, and activity classification.
+
+    columns:
+      - name: session_id
+        description: "Unique session identifier"
+        tests:
+          - unique
+          - not_null
+
+      - name: project_id
+        description: "Project this session belongs to"
+
+      - name: session_start
+        description: "Timestamp when session began"
+        tests:
+          - not_null
+
+      - name: session_end
+        description: "Timestamp when session ended"
+        tests:
+          - not_null
+
+      - name: duration_seconds
+        description: "Session duration in seconds"
+
+      - name: message_count
+        description: "Total messages in session"
+        tests:
+          - not_null
+
+      - name: tool_call_count
+        description: "Total tool calls in session"
+        tests:
+          - not_null
+
+      - name: session_duration_category
+        description: "Duration classification"
+        tests:
+          - accepted_values:
+              values: ['quick', 'short', 'medium', 'long']
+
+      - name: activity_level
+        description: "Activity classification based on message count"
+        tests:
+          - accepted_values:
+              values: ['minimal', 'light', 'moderate', 'heavy']
+
+  - name: int_tool_usage
+    description: |
+      Enriched tool call data with category classification,
+      file path extraction, and execution time estimates.
+
+    columns:
+      - name: conversation_id
+        description: "Unique tool call identifier"
+        tests:
+          - unique
+          - not_null
+
+      - name: tool_name
+        description: "Name of the tool"
+        tests:
+          - not_null
+
+      - name: tool_category
+        description: "Category from tool_categories seed"
+        tests:
+          - not_null
+
+      - name: is_file_operation
+        description: "True if tool operates on files"
+        tests:
+          - not_null
+
+      - name: is_search_operation
+        description: "True if tool performs search"
+        tests:
+          - not_null
+
+      - name: is_shell_command
+        description: "True if tool executes shell commands"
+        tests:
+          - not_null
+
+      - name: file_type_category
+        description: "Classification of file type if applicable"
+        tests:
+          - accepted_values:
+              values:
+                - javascript
+                - python
+                - jvm
+                - go
+                - rust
+                - sql
+                - documentation
+                - config
+                - styles
+                - html
+                - shell
+                - docker
+                - other
