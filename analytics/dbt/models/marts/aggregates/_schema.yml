@@ -1,0 +1,171 @@
+# Marts Layer Schema - Aggregates
+# Gold layer: Pre-computed metrics for dashboard performance
+
+version: 2
+
+models:
+  - name: agg_session_metrics
+    description: |
+      Pre-aggregated session statistics for quick dashboard loads.
+      Contains overall metrics and breakdowns by category.
+
+    columns:
+      - name: metric_type
+        description: "Type of aggregation: overall, by_duration_category, by_activity_level, by_time_of_day"
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - overall
+                - by_duration_category
+                - by_activity_level
+                - by_time_of_day
+
+      - name: total_sessions
+        description: "Count of sessions for this grouping"
+        tests:
+          - not_null
+
+      - name: computed_at
+        description: "When this aggregate was computed"
+        tests:
+          - not_null
+
+  - name: agg_tool_efficiency
+    description: |
+      Tool usage and performance metrics.
+      One row per tool with usage stats and efficiency metrics.
+
+    columns:
+      - name: tool_name
+        description: "Name of the tool"
+        tests:
+          - unique
+          - not_null
+
+      - name: tool_category
+        description: "Category classification"
+        tests:
+          - not_null
+
+      - name: total_calls
+        description: "Total times this tool was called"
+        tests:
+          - not_null
+
+      - name: popularity_rank
+        description: "Rank by usage (1 = most used)"
+        tests:
+          - not_null
+
+      - name: computed_at
+        description: "When this aggregate was computed"
+        tests:
+          - not_null
+
+  - name: agg_code_changes
+    description: |
+      File operation statistics by various dimensions.
+      Supports code activity and modification analysis.
+
+    columns:
+      - name: aggregation_level
+        description: "Level of aggregation: overall, by_file_type, by_operation_type, by_extension"
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - overall
+                - by_file_type
+                - by_operation_type
+                - by_extension
+
+      - name: total_operations
+        description: "Total file operations in this grouping"
+        tests:
+          - not_null
+
+      - name: computed_at
+        description: "When this aggregate was computed"
+        tests:
+          - not_null
+
+  - name: agg_daily_summary
+    description: |
+      Daily metrics for time-series analysis and trend dashboards.
+      One row per date with comprehensive activity metrics.
+
+    columns:
+      - name: date_key
+        description: "Date of the summary"
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+
+      - name: session_count
+        description: "Number of sessions on this date"
+        tests:
+          - not_null
+
+      - name: message_count
+        description: "Total messages on this date"
+        tests:
+          - not_null
+
+      - name: tool_call_count
+        description: "Total tool calls on this date"
+        tests:
+          - not_null
+
+      - name: has_activity
+        description: "Whether any activity occurred"
+        tests:
+          - not_null
+
+      - name: computed_at
+        description: "When this aggregate was computed"
+        tests:
+          - not_null
+
+  - name: agg_hourly_activity
+    description: |
+      Hourly activity patterns for heatmap visualization.
+      24 hours x 7 days matrix with activity metrics.
+
+    columns:
+      - name: hour_of_day
+        description: "Hour (0-23)"
+        tests:
+          - not_null
+
+      - name: day_of_week
+        description: "Day of week (0=Sunday, 6=Saturday)"
+        tests:
+          - not_null
+
+      - name: day_name
+        description: "Full name of the day"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+      - name: time_of_day
+        description: "Time period classification"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['morning', 'afternoon', 'evening', 'night']
+
+      - name: total_activity
+        description: "Combined message and tool activity count"
+        tests:
+          - not_null
+
+      - name: computed_at
+        description: "When this aggregate was computed"
+        tests:
+          - not_null
