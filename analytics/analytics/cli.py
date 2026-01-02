@@ -432,10 +432,99 @@ def pipeline(
 
 
 @app.command()
-def validate() -> None:
+def validate(
+    bronze: bool = typer.Option(
+        True,
+        "--bronze/--no-bronze",
+        help="Validate bronze (raw) layer",
+    ),
+    silver: bool = typer.Option(
+        True,
+        "--silver/--no-silver",
+        help="Validate silver (intermediate) layer",
+    ),
+    checkpoint: str | None = typer.Option(
+        None,
+        "--checkpoint",
+        "-c",
+        help="Run a specific checkpoint by name",
+    ),
+    build_docs: bool = typer.Option(
+        False,
+        "--build-docs",
+        help="Build data documentation after validation",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Enable verbose logging",
+    ),
+) -> None:
     """Run Great Expectations data quality checks."""
-    console.print("[yellow]Validate command not yet implemented[/yellow]")
-    # TODO: Implement in Phase 12
+    from analytics.quality import DataQualityValidator
+
+    setup_logging("DEBUG" if verbose else "INFO")
+
+    console.print("[bold blue]Data Quality Validation[/bold blue]\n")
+
+    validator = DataQualityValidator()
+
+    if validator.context is None:
+        console.print("[bold red]Great Expectations not available[/bold red]")
+        console.print("Install with: pip install great-expectations")
+        raise typer.Exit(1)
+
+    results = {}
+
+    if checkpoint:
+        console.print(f"Running checkpoint: {checkpoint}")
+        results["checkpoint"] = validator.run_checkpoint(checkpoint)
+    else:
+        if bronze:
+            console.print("Validating bronze layer...")
+            results["bronze"] = validator.validate_bronze()
+
+        if silver:
+            console.print("Validating silver layer...")
+            results["silver"] = validator.validate_silver()
+
+    # Display results
+    console.print("\n[bold]Validation Results:[/bold]\n")
+
+    all_success = True
+    for layer, result in results.items():
+        success = result.get("success", False)
+        all_success = all_success and success
+
+        status = "[green]✓ PASSED[/green]" if success else "[red]✗ FAILED[/red]"
+        console.print(f"  {layer}: {status}")
+
+        if result.get("statistics"):
+            stats = result["statistics"]
+            console.print(f"    Expectations: {stats.get('evaluated_expectations', 0)}")
+            console.print(f"    Successful: {stats.get('successful_expectations', 0)}")
+            console.print(f"    Unsuccessful: {stats.get('unsuccessful_expectations', 0)}")
+
+        if result.get("error"):
+            console.print(f"    [red]Error: {result['error']}[/red]")
+
+    if build_docs:
+        console.print("\nBuilding data documentation...")
+        if validator.build_data_docs():
+            docs_url = validator.get_data_docs_url()
+            console.print(f"[green]Data docs built successfully[/green]")
+            if docs_url:
+                console.print(f"View at: {docs_url}")
+        else:
+            console.print("[yellow]Failed to build data docs[/yellow]")
+
+    console.print()
+    if all_success:
+        console.print("[bold green]All validations passed![/bold green]")
+    else:
+        console.print("[bold red]Some validations failed[/bold red]")
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":

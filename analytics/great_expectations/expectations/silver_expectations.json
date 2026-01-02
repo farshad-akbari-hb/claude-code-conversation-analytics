@@ -1,0 +1,141 @@
+{
+  "data_asset_type": null,
+  "expectation_suite_name": "silver_expectations",
+  "expectations": [
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {
+        "column": "conversation_id"
+      },
+      "meta": {
+        "notes": {
+          "format": "markdown",
+          "content": "Primary key in staging models must not be null"
+        }
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_in_set",
+      "kwargs": {
+        "column": "entry_type",
+        "value_set": ["user", "assistant", "tool_use", "tool_result", "unknown"]
+      },
+      "meta": {
+        "notes": {
+          "format": "markdown",
+          "content": "Entry types must be valid (includes 'unknown' for edge cases)"
+        }
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_in_set",
+      "kwargs": {
+        "column": "task_category",
+        "value_set": ["bug_fix", "feature", "refactor", "testing", "documentation", "review", "other"]
+      },
+      "meta": {
+        "notes": {
+          "format": "markdown",
+          "content": "Task category must be a valid classification"
+        }
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_in_set",
+      "kwargs": {
+        "column": "time_of_day",
+        "value_set": ["morning", "afternoon", "evening", "night"]
+      },
+      "meta": {
+        "notes": {
+          "format": "markdown",
+          "content": "Time of day must be a valid period"
+        }
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": {
+        "column": "hour_of_day",
+        "min_value": 0,
+        "max_value": 23
+      },
+      "meta": {
+        "notes": {
+          "format": "markdown",
+          "content": "Hour must be between 0 and 23"
+        }
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": {
+        "column": "day_of_week",
+        "min_value": 0,
+        "max_value": 6
+      },
+      "meta": {
+        "notes": {
+          "format": "markdown",
+          "content": "Day of week must be between 0 (Sunday) and 6 (Saturday)"
+        }
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {
+        "column": "effective_timestamp"
+      },
+      "meta": {
+        "notes": {
+          "format": "markdown",
+          "content": "Effective timestamp must always be computed"
+        }
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_in_set",
+      "kwargs": {
+        "column": "session_duration_category",
+        "value_set": ["quick", "short", "medium", "long"]
+      },
+      "meta": {
+        "notes": {
+          "format": "markdown",
+          "content": "Session duration must be properly categorized"
+        }
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_in_set",
+      "kwargs": {
+        "column": "activity_level",
+        "value_set": ["minimal", "light", "moderate", "heavy"]
+      },
+      "meta": {
+        "notes": {
+          "format": "markdown",
+          "content": "Activity level must be properly categorized"
+        }
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_of_type",
+      "kwargs": {
+        "column": "duration_seconds",
+        "type_": "FLOAT"
+      },
+      "meta": {
+        "notes": {
+          "format": "markdown",
+          "content": "Duration should be a numeric type"
+        }
+      }
+    }
+  ],
+  "ge_cloud_id": null,
+  "meta": {
+    "great_expectations_version": "0.18.0",
+    "notes": "Silver layer data quality expectations for intermediate models"
+  }
+}

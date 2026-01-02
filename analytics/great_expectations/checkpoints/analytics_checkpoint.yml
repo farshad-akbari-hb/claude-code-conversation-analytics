@@ -1,0 +1,43 @@
+# Analytics Pipeline Checkpoint
+# Validates data quality at bronze and silver layers
+
+name: analytics_checkpoint
+config_version: 1.0
+template_name:
+module_name: great_expectations.checkpoint
+class_name: Checkpoint
+run_name_template: "%Y%m%d-%H%M%S-analytics-validation"
+
+expectation_suite_name:
+action_list:
+  - name: store_validation_result
+    action:
+      class_name: StoreValidationResultAction
+
+  - name: store_evaluation_params
+    action:
+      class_name: StoreEvaluationParametersAction
+
+  - name: update_data_docs
+    action:
+      class_name: UpdateDataDocsAction
+      site_names:
+        - local_site
+
+validations:
+  # Bronze layer validation
+  - batch_request:
+      datasource_name: duckdb_datasource
+      data_connector_name: default_inferred_data_connector_name
+      data_asset_name: raw.conversations
+    expectation_suite_name: bronze_expectations
+
+  # Silver layer validation - messages
+  - batch_request:
+      datasource_name: duckdb_datasource
+      data_connector_name: default_inferred_data_connector_name
+      data_asset_name: staging.stg_conversations
+    expectation_suite_name: silver_expectations
+
+evaluation_parameters: {}
+runtime_configuration: {}

@@ -1,0 +1,51 @@
+# Great Expectations Configuration
+# Data quality validation for Claude Analytics Platform
+
+config_version: 3.0
+config_variables_file_path: uncommitted/config_variables.yml
+
+# Data sources
+fluent_datasources:
+  duckdb_datasource:
+    type: sql
+    connection_string: duckdb:///${DUCKDB_PATH:-/duckdb/analytics.db}
+
+# Data stores for expectations and validation results
+stores:
+  expectations_store:
+    class_name: ExpectationsStore
+    store_backend:
+      class_name: TupleFilesystemStoreBackend
+      base_directory: expectations/
+
+  validations_store:
+    class_name: ValidationsStore
+    store_backend:
+      class_name: TupleFilesystemStoreBackend
+      base_directory: uncommitted/validations/
+
+  checkpoint_store:
+    class_name: CheckpointStore
+    store_backend:
+      class_name: TupleFilesystemStoreBackend
+      base_directory: checkpoints/
+
+# Data documentation sites
+data_docs_sites:
+  local_site:
+    class_name: SiteBuilder
+    show_how_to_buttons: true
+    store_backend:
+      class_name: TupleFilesystemStoreBackend
+      base_directory: uncommitted/data_docs/local_site/
+    site_index_builder:
+      class_name: DefaultSiteIndexBuilder
+
+expectations_store_name: expectations_store
+validations_store_name: validations_store
+checkpoint_store_name: checkpoint_store
+
+# Include data context in validation results
+include_rendered_content:
+  globally: false
+  expectation_validation_result: false
