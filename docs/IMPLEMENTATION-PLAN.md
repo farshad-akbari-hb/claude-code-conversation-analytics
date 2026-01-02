@@ -14,7 +14,7 @@ Implement an ELT analytics platform for Claude Code conversation logs as specifi
 
 ## Current State
 
-- **Sync Service** (`src/`): Already syncs JSONL → SQLite → MongoDB
+- **Sync Service** (`sync-service/src/`): Already syncs JSONL → SQLite → MongoDB
 - **MongoDB Collection**: `claude_logs.conversations` with documents containing:
   - `_id`, `type`, `sessionId`, `timestamp`, `message`, `projectId`, `sourceFile`, `ingestedAt`
 - **UI** (`ui/`): Next.js app with basic filtering, search, and stats

@@ -217,7 +217,7 @@ services:
       - DBT_PROFILES_DIR=/app/dbt
       - DBT_TARGET=prod
     ports:
-      - "8080:8080"
+      - "8686:8080"
     volumes:
       # DuckDB needs write access for lock files even when reading
       - duckdb-data:/duckdb

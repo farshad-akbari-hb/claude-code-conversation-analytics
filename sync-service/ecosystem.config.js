@@ -1,4 +1,5 @@
-require('dotenv').config();
+// Load environment from root .env (shared with UI)
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 
 module.exports = {
   apps: [

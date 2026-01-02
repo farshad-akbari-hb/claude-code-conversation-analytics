@@ -1,5 +1,8 @@
-import 'dotenv/config';
+import { config as loadEnv } from 'dotenv';
 import path from 'path';
+
+// Load environment from root .env (shared with UI)
+loadEnv({ path: path.resolve(__dirname, '../../.env') });
 import os from 'os';
 import http from 'http';
 import { Buffer } from './buffer';

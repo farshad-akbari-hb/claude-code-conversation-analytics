@@ -5,17 +5,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Run Commands
 
 ```bash
-# Sync Service (TypeScript)
-npm install          # Install dependencies
-npm run build        # Compile TypeScript to dist/
+# Sync Service (TypeScript) - from root
+npm run build        # Compile TypeScript to sync-service/dist/
 npm run dev          # Run with hot reload (tsx watch)
 npm start            # Run compiled version
 npm run lint         # Run ESLint
 
+# Or run directly in sync-service/
+cd sync-service
+npm install          # Install dependencies (first time only)
+npm run build
+npm run dev
+
 # UI (Next.js on port 3000)
 cd ui && npm install # First time only
-npm run dev:ui       # Development
-npm run build:ui     # Production build
+npm run dev:ui       # Development (from root)
+npm run build:ui     # Production build (from root)
 
 # Analytics (Python + dbt)
 cd analytics
@@ -26,7 +31,7 @@ make run-adhoc       # Incremental run
 make logs            # View worker logs
 
 # Production (PM2)
-pm2 start ecosystem.config.js
+cd sync-service && pm2 start ecosystem.config.js
 pm2 logs claude-mongo-sync
 ```
 
@@ -83,11 +88,11 @@ This project has three main components:
 
 | File | Class | Responsibility |
 |------|-------|----------------|
-| `src/watcher.ts` | `Watcher` | Monitors JSONL files via chokidar, parses new lines, sends to buffer |
-| `src/buffer.ts` | `Buffer` | SQLite persistence layer - stores file positions and pending entries |
-| `src/sync.ts` | `MongoSync` | Periodic batch sync from SQLite to MongoDB |
-| `src/index.ts` | - | Bootstrap, config loading, health endpoint, graceful shutdown |
-| `src/types.ts` | - | TypeScript interfaces for entries, documents, stats |
+| `sync-service/src/watcher.ts` | `Watcher` | Monitors JSONL files via chokidar, parses new lines, sends to buffer |
+| `sync-service/src/buffer.ts` | `Buffer` | SQLite persistence layer - stores file positions and pending entries |
+| `sync-service/src/sync.ts` | `MongoSync` | Periodic batch sync from SQLite to MongoDB |
+| `sync-service/src/index.ts` | - | Bootstrap, config loading, health endpoint, graceful shutdown |
+| `sync-service/src/types.ts` | - | TypeScript interfaces for entries, documents, stats |
 
 ### Analytics Components
 
