@@ -30,6 +30,11 @@ class MongoSettings(BaseSettings):
         description="Collection name with conversation entries",
     )
 
+    @property
+    def database(self) -> str:
+        """Alias for db field for clarity."""
+        return self.db
+
 
 class DuckDBSettings(BaseSettings):
     """DuckDB target configuration."""

@@ -216,19 +216,70 @@ def transform(
         None,
         "--models",
         "-m",
-        help="Specific dbt models to run (comma-separated)",
+        help="Specific dbt models to run (comma-separated or dbt selector)",
     ),
     full_refresh: bool = typer.Option(
         False,
         "--full-refresh",
         help="Force full refresh of incremental models",
     ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Enable verbose logging",
+    ),
 ) -> None:
     """Run dbt transformations."""
-    console.print("[yellow]Transform command not yet implemented[/yellow]")
-    console.print(f"  models: {models}")
-    console.print(f"  full_refresh: {full_refresh}")
-    # TODO: Implement in Phase 4
+    import subprocess
+
+    setup_logging("DEBUG" if verbose else "INFO")
+    settings = get_settings()
+
+    console.print("[bold blue]dbt Transformation[/bold blue]\n")
+    console.print(f"  Project: {settings.dbt.project_dir}")
+    console.print(f"  Target: {settings.dbt.target}")
+    console.print(f"  Models: {models or 'all'}")
+    console.print(f"  Mode: {'Full Refresh' if full_refresh else 'Incremental'}")
+    console.print()
+
+    # Build dbt run command
+    cmd = [
+        "dbt", "run",
+        "--project-dir", str(settings.dbt.project_dir),
+        "--profiles-dir", str(settings.dbt.profiles_dir),
+        "--target", settings.dbt.target,
+    ]
+
+    if full_refresh:
+        cmd.append("--full-refresh")
+
+    if models:
+        cmd.extend(["--select", models])
+
+    try:
+        console.print("[dim]Running dbt...[/dim]\n")
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(settings.dbt.project_dir),
+        )
+
+        if result.stdout:
+            console.print(result.stdout)
+
+        if result.returncode != 0:
+            console.print(f"[bold red]dbt run failed:[/bold red]")
+            if result.stderr:
+                console.print(result.stderr)
+            raise typer.Exit(1)
+
+        console.print("[bold green]dbt transformations complete![/bold green]")
+
+    except FileNotFoundError:
+        console.print("[bold red]Error: dbt not found. Is it installed?[/bold red]")
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -238,11 +289,146 @@ def pipeline(
         "--full-backfill",
         help="Run full historical backfill",
     ),
+    full_refresh: bool = typer.Option(
+        False,
+        "--full-refresh",
+        help="Rebuild all data and dbt models",
+    ),
+    skip_extract: bool = typer.Option(
+        False,
+        "--skip-extract",
+        help="Skip extraction step",
+    ),
+    skip_load: bool = typer.Option(
+        False,
+        "--skip-load",
+        help="Skip loading step",
+    ),
+    skip_transform: bool = typer.Option(
+        False,
+        "--skip-transform",
+        help="Skip transformation step",
+    ),
+    use_prefect: bool = typer.Option(
+        False,
+        "--prefect",
+        help="Run via Prefect orchestration (requires Prefect server)",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Enable verbose logging",
+    ),
 ) -> None:
     """Run the complete analytics pipeline (extract → load → transform)."""
-    console.print("[yellow]Pipeline command not yet implemented[/yellow]")
-    console.print(f"  full_backfill: {full_backfill}")
-    # TODO: Implement in Phase 10
+    setup_logging("DEBUG" if verbose else "INFO")
+
+    console.print("[bold blue]Claude Analytics Pipeline[/bold blue]\n")
+    console.print(f"  Mode: {'Full Backfill' if full_backfill else 'Incremental'}")
+    console.print(f"  Refresh: {'Full' if full_refresh else 'Incremental'}")
+    console.print(f"  Steps: {'Prefect' if use_prefect else 'Direct'}")
+    console.print()
+
+    if use_prefect:
+        from analytics.flows import analytics_pipeline as prefect_pipeline
+
+        console.print("[dim]Running via Prefect...[/dim]\n")
+        result = prefect_pipeline(
+            full_backfill=full_backfill,
+            full_refresh=full_refresh,
+            skip_extract=skip_extract,
+            skip_load=skip_load,
+            skip_transform=skip_transform,
+        )
+        console.print(f"\n[bold green]Pipeline complete![/bold green]")
+        console.print(f"Results: {result}")
+    else:
+        # Direct execution without Prefect
+        from analytics.extractor import MongoExtractor
+        from analytics.loader import DuckDBLoader
+
+        settings = get_settings()
+
+        # Step 1: Extract
+        if not skip_extract:
+            console.print("[bold cyan]Step 1: Extract[/bold cyan]")
+            try:
+                extractor = MongoExtractor(
+                    mongo_uri=settings.mongo.uri,
+                    mongo_db=settings.mongo.database,
+                    collection_name=settings.mongo.collection,
+                    output_dir=Path(settings.data.raw_dir),
+                )
+
+                if full_backfill:
+                    stats = extractor.full_extract()
+                else:
+                    stats = extractor.incremental_extract()
+
+                console.print(f"  [green]✓[/green] Extraction complete: {stats}")
+                extractor.close()
+            except Exception as e:
+                console.print(f"  [red]✗[/red] Extraction failed: {e}")
+                raise typer.Exit(1)
+        else:
+            console.print("[dim]Step 1: Extract (skipped)[/dim]")
+
+        # Step 2: Load
+        if not skip_load:
+            console.print("[bold cyan]Step 2: Load[/bold cyan]")
+            try:
+                loader = DuckDBLoader(db_path=Path(settings.duckdb.path))
+                loader.create_database()
+
+                if full_refresh:
+                    stats = loader.load_from_parquet(str(settings.data.raw_dir))
+                else:
+                    stats = loader.upsert_incremental(str(settings.data.raw_dir))
+
+                console.print(f"  [green]✓[/green] Loading complete: {stats}")
+                loader.close()
+            except Exception as e:
+                console.print(f"  [red]✗[/red] Loading failed: {e}")
+                raise typer.Exit(1)
+        else:
+            console.print("[dim]Step 2: Load (skipped)[/dim]")
+
+        # Step 3: Transform
+        if not skip_transform:
+            console.print("[bold cyan]Step 3: Transform[/bold cyan]")
+            import subprocess
+
+            cmd = [
+                "dbt", "run",
+                "--project-dir", str(settings.dbt.project_dir),
+                "--profiles-dir", str(settings.dbt.profiles_dir),
+                "--target", settings.dbt.target,
+            ]
+
+            if full_refresh:
+                cmd.append("--full-refresh")
+
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    cwd=str(settings.dbt.project_dir),
+                )
+
+                if result.returncode != 0:
+                    console.print(f"  [red]✗[/red] dbt failed: {result.stderr}")
+                    raise typer.Exit(1)
+
+                console.print(f"  [green]✓[/green] Transformations complete")
+            except FileNotFoundError:
+                console.print(f"  [red]✗[/red] dbt not found")
+                raise typer.Exit(1)
+        else:
+            console.print("[dim]Step 3: Transform (skipped)[/dim]")
+
+        console.print("\n[bold green]Pipeline complete![/bold green]")
 
 
 @app.command()
