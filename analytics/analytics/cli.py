@@ -123,17 +123,91 @@ def extract(
 
 @app.command()
 def load(
-    source_dir: str | None = typer.Option(
+    source_dir: Path | None = typer.Option(
         None,
         "--source",
         "-s",
         help="Source directory for Parquet files (defaults to raw_dir)",
     ),
+    full_refresh: bool = typer.Option(
+        False,
+        "--full-refresh",
+        help="Truncate table before loading",
+    ),
+    stats: bool = typer.Option(
+        False,
+        "--stats",
+        help="Show table statistics after loading",
+    ),
+    init_only: bool = typer.Option(
+        False,
+        "--init-only",
+        help="Only initialize database schema (no data load)",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Enable verbose logging",
+    ),
 ) -> None:
     """Load Parquet files into DuckDB."""
-    console.print("[yellow]Load command not yet implemented[/yellow]")
-    console.print(f"  source_dir: {source_dir}")
-    # TODO: Implement in Phase 3
+    from analytics.loader import DuckDBLoader
+
+    setup_logging("DEBUG" if verbose else "INFO")
+    settings = get_settings()
+
+    source_path = source_dir or settings.data.raw_dir
+
+    console.print("[bold blue]DuckDB Loading[/bold blue]\n")
+    console.print(f"  Database: {settings.duckdb.path}")
+    console.print(f"  Source: {source_path}")
+    console.print(f"  Mode: {'Full Refresh' if full_refresh else 'Upsert'}")
+    console.print()
+
+    try:
+        loader = DuckDBLoader(settings)
+
+        if init_only:
+            loader.create_database()
+            console.print("[bold green]Database initialized successfully![/bold green]")
+        else:
+            rows = loader.load_from_parquet(
+                source_path,
+                full_refresh=full_refresh,
+            )
+            console.print(f"\n[bold green]Loading complete![/bold green]")
+            console.print(f"Rows loaded/updated: {rows}")
+
+        if stats:
+            console.print("\n[bold]Table Statistics:[/bold]")
+            table_stats = loader.get_table_stats()
+
+            console.print(f"  Total rows: {table_stats['row_count']}")
+
+            if table_stats.get("date_range"):
+                dr = table_stats["date_range"]
+                console.print(f"  Date range: {dr['min']} to {dr['max']} ({dr['count']} days)")
+
+            if table_stats.get("type_distribution"):
+                console.print("\n  Type distribution:")
+                table = Table(show_header=True, header_style="bold cyan")
+                table.add_column("Type")
+                table.add_column("Count", justify="right")
+
+                for t in table_stats["type_distribution"]:
+                    table.add_row(str(t["type"]), str(t["count"]))
+
+                console.print(table)
+
+        loader.disconnect()
+
+    except FileNotFoundError as e:
+        console.print(f"[bold red]Source not found:[/bold red] {e}")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[bold red]Loading failed:[/bold red] {e}")
+        raise typer.Exit(1)
 
 
 @app.command()
