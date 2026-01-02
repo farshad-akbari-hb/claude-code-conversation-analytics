@@ -821,6 +821,7 @@ flowchart TB
 ### 8.2 Validation Rules
 
 **Bronze Layer (raw.conversations)**:
+
 | Expectation | Column | Rule |
 |-------------|--------|------|
 | not_null | _id, type, date, extracted_at | Required fields |
@@ -829,6 +830,7 @@ flowchart TB
 | between | content_length | 0 to 100,000 |
 
 **Silver Layer (stg_conversations)**:
+
 | Expectation | Column | Rule |
 |-------------|--------|------|
 | not_null | conversation_id, entry_type | Cleaned fields |

@@ -5,15 +5,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Run Commands
 
 ```bash
+# Sync Service (TypeScript)
 npm install          # Install dependencies
 npm run build        # Compile TypeScript to dist/
 npm run dev          # Run with hot reload (tsx watch)
 npm start            # Run compiled version
+npm run lint         # Run ESLint
 
 # UI (Next.js on port 3000)
 cd ui && npm install # First time only
 npm run dev:ui       # Development
 npm run build:ui     # Production build
+
+# Analytics (Python + dbt)
+cd analytics
+make up              # Start all services (Prefect + Metabase)
+make deploy          # Deploy flows to Prefect server
+make run-backfill    # Initial full backfill
+make run-adhoc       # Incremental run
+make logs            # View worker logs
 
 # Production (PM2)
 pm2 start ecosystem.config.js
@@ -22,15 +32,54 @@ pm2 logs claude-mongo-sync
 
 ## Architecture
 
-This service syncs Claude Code's JSONL conversation logs to MongoDB with local SQLite buffering for resilience.
+This project has three main components:
 
-### Data Flow
+1. **Sync Service** - Real-time JSONL to MongoDB sync with SQLite buffering
+2. **UI** - Next.js application for browsing conversation logs
+3. **Analytics** - ELT platform with dbt transformations and Metabase dashboards
+
+### Complete Data Flow
 
 ```
-~/.claude/projects/**/*.jsonl → Watcher → SQLite Buffer → MongoDB
+~/.claude/projects/**/*.jsonl
+         │
+         ▼
+    ┌─────────┐
+    │ Watcher │ (chokidar)
+    └────┬────┘
+         │
+         ▼
+    ┌─────────┐
+    │ SQLite  │ (buffer.db)
+    │ Buffer  │
+    └────┬────┘
+         │
+         ▼
+    ┌─────────┐
+    │ MongoDB │ ◄───────────────────────┐
+    └────┬────┘                         │
+         │                              │
+    ┌────┴────┐                    ┌────┴────┐
+    │         │                    │         │
+    ▼         ▼                    │         │
+┌──────┐  ┌──────────┐             │         │
+│  UI  │  │ Analytics│             │  Sync   │
+│(3000)│  │ Extractor│             │ Service │
+└──────┘  └────┬─────┘             └─────────┘
+               │
+               ▼
+          ┌─────────┐
+          │ DuckDB  │ ← dbt (Bronze→Silver→Gold)
+          └────┬────┘
+               │
+               ▼
+          ┌──────────┐
+          │ Metabase │
+          │  (3001)  │
+          └──────────┘
 ```
 
-### Core Components
+### Sync Service Components
 
 | File | Class | Responsibility |
 |------|-------|----------------|
@@ -40,13 +89,17 @@ This service syncs Claude Code's JSONL conversation logs to MongoDB with local S
 | `src/index.ts` | - | Bootstrap, config loading, health endpoint, graceful shutdown |
 | `src/types.ts` | - | TypeScript interfaces for entries, documents, stats |
 
-### Resilience Pattern
+### Analytics Components
 
-The SQLite buffer (`~/.claude-sync/buffer.db`) provides durability:
-- **file_positions** table: Tracks byte offset per JSONL file (enables incremental reads)
-- **pending_entries** table: Queue of entries awaiting MongoDB sync
-
-When MongoDB is unavailable, entries accumulate in SQLite. The `MongoSync.sync()` method handles reconnection and batch writes with duplicate key handling.
+| Path | Responsibility |
+|------|----------------|
+| `analytics/analytics/extractor.py` | MongoDB extraction to Parquet |
+| `analytics/analytics/loader.py` | DuckDB loading |
+| `analytics/analytics/cli.py` | CLI entry point |
+| `analytics/analytics/flows/` | Prefect orchestration flows |
+| `analytics/dbt/models/staging/` | Bronze layer (cleaned source) |
+| `analytics/dbt/models/intermediate/` | Silver layer (enriched) |
+| `analytics/dbt/models/marts/` | Gold layer (star schema for BI) |
 
 ### Key Design Decisions
 
@@ -54,19 +107,17 @@ When MongoDB is unavailable, entries accumulate in SQLite. The `MongoSync.sync()
 - **Prepared statements**: All SQL queries pre-compiled at startup (`Buffer.prepareStatements()`)
 - **Processing lock**: `Watcher.processing` Set prevents concurrent processing of same file
 - **ordered: false**: MongoDB insertMany uses unordered for partial success on duplicates
+- **Medallion architecture**: dbt models follow Bronze→Silver→Gold pattern for analytics
 
 ## Configuration
+
+### Sync Service
 
 Copy `.env.example` to `.env` and configure:
 
 ```bash
 cp .env.example .env
-# Edit .env with your MongoDB credentials
 ```
-
-Both `npm run dev` and PM2 (`ecosystem.config.js`) read from `.env`.
-
-Environment variables (see `src/index.ts` config object):
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
@@ -78,38 +129,47 @@ Environment variables (see `src/index.ts` config object):
 | `BATCH_SIZE` | `100` | Entries per sync |
 | `HEALTH_PORT` | `9090` | Health endpoint |
 
+### Analytics
+
+Copy `.env.analytics.example` to `.env.analytics` in the analytics directory.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `DUCKDB_PATH` | `/duckdb/analytics.db` | DuckDB file path |
+| `DBT_TARGET` | `dev` | dbt profile target |
+
+## Testing
+
+```bash
+# Analytics Python tests
+cd analytics && pytest tests/
+
+# Analytics dbt tests
+cd analytics/dbt && dbt test
+
+# Data quality validation
+cd analytics && python -m analytics.cli validate
+```
+
 ## Monitoring
 
 ```bash
-# Health check
+# Sync health check
 curl localhost:9090/health
 
 # Buffer inspection
 sqlite3 ~/.claude-sync/buffer.db "SELECT COUNT(*) FROM pending_entries WHERE synced=0"
+
+# Analytics pipeline status
+cd analytics && make status
 ```
 
-## UI (`/ui`)
+## Ports
 
-Next.js application for browsing and searching conversation logs.
-
-### Features
-- Filter by project (required), session, date range
-- Full-text search in messages
-- Export filtered results to JSON
-- Cursor-based pagination
-
-### Structure
-
-| Path | Purpose |
-|------|---------|
-| `ui/src/app/api/` | API routes (projects, sessions, conversations, export) |
-| `ui/src/components/` | FilterPanel, ConversationList, ConversationDetail |
-| `ui/src/lib/mongodb.ts` | MongoDB connection singleton |
-| `ui/src/hooks/` | React Query hooks |
-
-### Ports
-
-| Service | Port |
-|---------|------|
-| Sync Health | 9090 |
-| UI | 3000 |
+| Service | Port | Purpose |
+|---------|------|---------|
+| Sync Health | 9090 | Health endpoint |
+| UI | 3000 | Next.js application |
+| Prefect UI | 4200 | Pipeline orchestration |
+| Metabase | 3001 | Dashboards & analytics |
+| dbt Docs | 8080 | Data model documentation |
