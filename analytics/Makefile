@@ -2,7 +2,7 @@
 # Convenience commands for managing the analytics pipeline
 
 .PHONY: up up-prefect down rebuild fresh deploy worker-local logs status \
-        run-adhoc run-backfill run-daily pipeline shell help
+        run-adhoc run-backfill run-daily pipeline shell help configure-metabase
 
 # Default target
 help:
@@ -29,6 +29,9 @@ help:
 	@echo ""
 	@echo "Development:"
 	@echo "  make worker-local - Start local Prefect worker"
+	@echo ""
+	@echo "Configuration:"
+	@echo "  make configure-metabase - Set Metabase DuckDB to read-only mode"
 	@echo ""
 
 # =============================================================================
@@ -138,3 +141,15 @@ worker-local:
 	@echo "Starting local worker..."
 	@echo "Make sure PREFECT_API_URL is set to http://localhost:4200/api"
 	PREFECT_API_URL=http://localhost:4200/api prefect worker start --pool analytics-pool
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+# Configure Metabase DuckDB connection for read-only mode
+# This prevents lock conflicts between Metabase and the ETL pipeline
+configure-metabase:
+	@echo "Configuring Metabase DuckDB connection for read-only mode..."
+	@echo "Note: Requires METABASE_PASSWORD environment variable"
+	docker-compose -f docker-compose.analytics.yml exec \
+		analytics-worker python /app/scripts/configure_metabase_readonly.py

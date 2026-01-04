@@ -8,7 +8,6 @@ This module defines the core ELT pipeline that orchestrates:
 """
 
 import subprocess
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -29,16 +28,12 @@ RETRY_DELAYS = [30, 60, 120]  # seconds
     retries=3,
     retry_delay_seconds=RETRY_DELAYS,
 )
-def extract_task(
-    full_backfill: bool = False,
-    since: Optional[datetime] = None,
-) -> dict:
+def extract_task(full_backfill: bool = False) -> dict:
     """
     Extract data from MongoDB and write to Parquet files.
 
     Args:
         full_backfill: If True, extract all historical data
-        since: If provided, extract data since this timestamp
 
     Returns:
         Dictionary with extraction statistics
@@ -55,8 +50,8 @@ def extract_task(
             logger.info("Running full backfill extraction")
             stats = extractor.full_extract()
         else:
-            logger.info(f"Running incremental extraction since: {since}")
-            stats = extractor.incremental_extract(since=since)
+            logger.info("Running incremental extraction")
+            stats = extractor.incremental_extract()
 
         logger.info(f"Extraction complete: {stats}")
         return stats

@@ -6,6 +6,7 @@ full refresh and incremental upsert operations.
 """
 
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,11 @@ import duckdb
 from analytics.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
+
+# Retry configuration for lock conflicts
+LOCK_RETRY_MAX_ATTEMPTS = 5
+LOCK_RETRY_BASE_DELAY = 2.0  # seconds
+LOCK_RETRY_MAX_DELAY = 30.0  # seconds
 
 
 # SQL statements for schema creation
@@ -97,9 +103,10 @@ class DuckDBLoader:
 
     def connect(self) -> duckdb.DuckDBPyConnection:
         """
-        Establish connection to DuckDB database.
+        Establish connection to DuckDB database with retry on lock conflicts.
 
         Creates the database file if it doesn't exist.
+        Uses exponential backoff when encountering lock conflicts.
         """
         if self._conn is not None:
             return self._conn
@@ -107,14 +114,44 @@ class DuckDBLoader:
         db_path = self.settings.duckdb.path
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"Connecting to DuckDB: {db_path}")
-        self._conn = duckdb.connect(str(db_path))
+        last_error: Exception | None = None
 
-        # Configure DuckDB settings
-        self._conn.execute(f"SET threads TO {self.settings.duckdb.threads};")
+        for attempt in range(LOCK_RETRY_MAX_ATTEMPTS):
+            try:
+                logger.info(f"Connecting to DuckDB: {db_path}")
+                self._conn = duckdb.connect(str(db_path))
 
-        logger.info("DuckDB connection established")
-        return self._conn
+                # Configure DuckDB settings
+                self._conn.execute(f"SET threads TO {self.settings.duckdb.threads};")
+
+                logger.info("DuckDB connection established")
+                return self._conn
+
+            except duckdb.IOException as e:
+                last_error = e
+                error_msg = str(e).lower()
+
+                # Check if this is a lock conflict
+                if "lock" in error_msg or "conflicting" in error_msg:
+                    delay = min(
+                        LOCK_RETRY_BASE_DELAY * (2 ** attempt),
+                        LOCK_RETRY_MAX_DELAY
+                    )
+                    logger.warning(
+                        f"DuckDB lock conflict (attempt {attempt + 1}/{LOCK_RETRY_MAX_ATTEMPTS}). "
+                        f"Another process may be using the database. Retrying in {delay:.1f}s..."
+                    )
+                    time.sleep(delay)
+                else:
+                    # Not a lock error, raise immediately
+                    raise
+
+        # All retries exhausted
+        logger.error(
+            f"Failed to connect to DuckDB after {LOCK_RETRY_MAX_ATTEMPTS} attempts. "
+            "Ensure Metabase is configured with read_only=true for the DuckDB connection."
+        )
+        raise last_error  # type: ignore
 
     def disconnect(self) -> None:
         """Close DuckDB connection."""
