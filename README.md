@@ -1,15 +1,14 @@
-# Claude MongoDB Sync
+# Claude Code Conversation Analytics
 
-Real-time sync of Claude Code JSONL conversation logs to MongoDB with local SQLite buffering for resilience.
+A complete platform for syncing, browsing, and analyzing Claude Code conversation logs. Features real-time JSONL sync to MongoDB, a Next.js UI for browsing conversations, and a dbt-based analytics pipeline with Metabase dashboards.
 
-## Features
+## Components
 
-- **Real-time watching** of Claude Code JSONL files
-- **SQLite buffer** survives MongoDB downtime and restarts
-- **Batched writes** for efficient MongoDB operations
-- **Health endpoint** for monitoring
-- **Graceful shutdown** with final sync attempt
-- **Auto-cleanup** of old synced entries
+| Component | Description | Tech Stack |
+|-----------|-------------|------------|
+| **Sync Service** | Real-time JSONL to MongoDB sync with SQLite buffering | TypeScript, chokidar, better-sqlite3 |
+| **UI** | Web interface for browsing conversation logs | Next.js, React, shadcn/ui, TanStack Query |
+| **Analytics** | ELT pipeline with dimensional modeling | Python, dbt, DuckDB, Prefect, Metabase |
 
 ## Architecture
 
@@ -24,46 +23,114 @@ Real-time sync of Claude Code JSONL conversation logs to MongoDB with local SQLi
          ▼
     ┌─────────┐
     │ SQLite  │ (buffer.db)
-    │ Buffer  │ - file positions
-    └────┬────┘ - pending entries
-         │
-         ▼
-    ┌─────────┐
-    │  Sync   │ (every 5s)
-    │ Worker  │
+    │ Buffer  │
     └────┬────┘
          │
          ▼
     ┌─────────┐
-    │ MongoDB │
-    └─────────┘
+    │ MongoDB │ ◄───────────────────────┐
+    └────┬────┘                         │
+         │                              │
+    ┌────┴────┐                    ┌────┴────┐
+    │         │                    │         │
+    ▼         ▼                    │         │
+┌──────┐  ┌──────────┐             │  Sync   │
+│  UI  │  │ Analytics│             │ Service │
+│(3000)│  │ Extractor│             └─────────┘
+└──────┘  └────┬─────┘
+               │
+               ▼
+          ┌─────────┐
+          │ DuckDB  │ ← dbt (Bronze→Silver→Gold)
+          └────┬────┘
+               │
+               ▼
+          ┌──────────┐
+          │ Metabase │
+          │  (3001)  │
+          └──────────┘
 ```
+
+## Quick Start
+
+```bash
+# 1. Clone and install
+git clone <repo>
+cd claude-code-conversation-analytics
+
+# 2. Configure environment
+cp .env.example .env
+# Edit .env with your MongoDB URI
+
+# 3. Start sync service
+cd sync-service && npm install && npm run dev
+
+# 4. Start UI (new terminal)
+cd ui && npm install && npm run dev
+
+# 5. Start analytics (optional, new terminal)
+cd analytics && make up && make deploy && make run-backfill
+```
+
+## Ports
+
+| Service | Port | URL |
+|---------|------|-----|
+| Sync Health | 9090 | http://localhost:9090/health |
+| UI | 3000 | http://localhost:3000 |
+| Metabase | 3001 | http://localhost:3001 |
+| Prefect UI | 4200 | http://localhost:4200 |
+| dbt Docs | 8080 | http://localhost:8080 |
 
 ## Installation
 
+### Sync Service
+
 ```bash
-# Clone and install
-git clone <repo>
-cd claude-mongo-sync
+cd sync-service
 npm install
-
-# Build TypeScript
 npm run build
+```
 
-# Configure
-cp .env.example .env
-# Edit .env with your MongoDB URI
+### UI
+
+```bash
+cd ui
+npm install
+npm run build
+```
+
+### Analytics
+
+```bash
+cd analytics
+# Uses Docker Compose - no local install needed
+make up
 ```
 
 ## Running
 
-### Option 1: PM2 (Recommended)
+### Development
+
+```bash
+# Sync service (from root)
+npm run dev
+
+# UI (from root)
+npm run dev:ui
+
+# Analytics
+cd analytics && make up && make deploy
+```
+
+### Production (PM2)
 
 ```bash
 # Install PM2 globally
 npm install -g pm2
 
-# Start service
+# Start sync service
+cd sync-service
 pm2 start ecosystem.config.js
 
 # Useful commands
@@ -77,7 +144,7 @@ pm2 startup
 pm2 save
 ```
 
-### Option 2: systemd (Production Linux)
+### Production (systemd)
 
 ```bash
 # Copy service file
@@ -85,23 +152,36 @@ sudo cp claude-mongo-sync@.service /etc/systemd/system/
 
 # Copy application
 sudo mkdir -p /opt/claude-mongo-sync
-sudo cp -r dist package.json node_modules /opt/claude-mongo-sync/
+sudo cp -r sync-service/dist sync-service/package.json sync-service/node_modules /opt/claude-mongo-sync/
 sudo cp .env /opt/claude-mongo-sync/
 
 # Enable and start (replace YOUR_USERNAME)
 sudo systemctl daemon-reload
 sudo systemctl enable claude-mongo-sync@YOUR_USERNAME
 sudo systemctl start claude-mongo-sync@YOUR_USERNAME
-
-# Check status
-sudo systemctl status claude-mongo-sync@YOUR_USERNAME
-journalctl -u claude-mongo-sync@YOUR_USERNAME -f
 ```
 
-### Option 3: Development
+## Analytics Pipeline
+
+The analytics component uses a medallion architecture (Bronze → Silver → Gold) with dbt transformations.
+
+### Commands
 
 ```bash
-npm run dev
+cd analytics
+
+# Infrastructure
+make up              # Start all services (Prefect + Metabase)
+make down            # Stop all services
+make logs            # View worker logs
+make status          # Show deployment status
+
+# Pipeline runs
+make deploy          # Deploy flows to Prefect server
+make run-backfill    # Initial full backfill
+make run-adhoc       # Incremental run
+make run-daily       # Daily full refresh
+make pipeline        # Run directly (no Prefect)
 ```
 
 ## Monitoring
@@ -155,6 +235,8 @@ db.conversations.aggregate([
 
 ## Configuration
 
+### Sync Service
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MONGO_URI` | `mongodb://localhost:27017` | MongoDB connection string |
@@ -164,6 +246,13 @@ db.conversations.aggregate([
 | `SYNC_INTERVAL_MS` | `5000` | Sync frequency (ms) |
 | `BATCH_SIZE` | `100` | Entries per sync batch |
 | `HEALTH_PORT` | `9090` | Health endpoint port |
+
+### Analytics
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DUCKDB_PATH` | `/duckdb/analytics.db` | DuckDB file path |
+| `DBT_TARGET` | `dev` | dbt profile target |
 
 ## Resilience
 
