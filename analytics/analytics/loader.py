@@ -131,7 +131,13 @@ class DuckDBLoader:
         # All retries exhausted
         logger.error(
             f"Failed to connect to DuckDB after {LOCK_RETRY_MAX_ATTEMPTS} attempts. "
-            "Ensure Metabase is configured with read_only=true for the DuckDB connection."
+            "DuckDB only allows one writer at a time. Metabase may be holding the lock."
+        )
+        logger.error(
+            "Solutions:\n"
+            "  1. Run 'make safe-backfill' or 'make safe-adhoc' to auto-pause Metabase\n"
+            "  2. Manually run 'make pause-metabase' before pipeline, 'make resume-metabase' after\n"
+            "  3. Configure Metabase DuckDB connection with read_only=true (may not work with all drivers)"
         )
         raise last_error  # type: ignore
 

@@ -80,7 +80,7 @@ print('Sessions:', conn.execute('SELECT COUNT(*) FROM marts.dim_sessions').fetch
    | Error | Cause | Fix |
    |-------|-------|-----|
    | MongoDB connection refused | MongoDB not running | Start MongoDB |
-   | DuckDB locked | Concurrent access | Kill other connections |
+   | DuckDB lock conflict | Metabase holding write lock | Use `make safe-backfill` or `make pause-metabase` |
    | dbt compilation error | SQL syntax | Fix model, run `dbt compile` |
    | Iceberg write error | Disk full | Clear old snapshots |
 
@@ -156,6 +156,48 @@ print('Sessions:', conn.execute('SELECT COUNT(*) FROM marts.dim_sessions').fetch
    | Source not found | Run loader to populate raw.conversations |
    | Column not found | Check extractor schema matches dbt source |
    | Type mismatch | Update dbt model casting |
+
+### DuckDB Lock Conflict
+
+**Symptoms**: Pipeline fails with "Could not set lock on file" or "Conflicting lock is held"
+
+**Cause**: DuckDB only allows one writer at a time. Metabase holds a write lock on the database file even when only reading (for lock files and caching).
+
+**Solutions**:
+
+1. **Recommended**: Use safe pipeline commands that automatically pause Metabase:
+   ```bash
+   # For full backfill
+   make safe-backfill
+
+   # For incremental run
+   make safe-adhoc
+
+   # For direct pipeline (blocking)
+   make safe-pipeline
+   ```
+
+2. **Manual**: Pause and resume Metabase around pipeline runs:
+   ```bash
+   # Before pipeline
+   make pause-metabase
+
+   # Run your pipeline
+   make run-backfill   # or run-adhoc, pipeline, etc.
+
+   # After pipeline completes
+   make resume-metabase
+   ```
+
+3. **Alternative**: Configure Metabase DuckDB driver for read-only mode:
+   ```bash
+   METABASE_PASSWORD=your_password make configure-metabase
+   ```
+   Note: This may not work with all DuckDB driver versions.
+
+**Prevention**: For scheduled runs, consider running pipelines during off-hours when Metabase usage is low, or use the `up-prefect` target to start infrastructure without Metabase.
+
+---
 
 ### Metabase Connection Error
 

@@ -2,7 +2,8 @@
 # Convenience commands for managing the analytics pipeline
 
 .PHONY: up up-prefect down rebuild fresh deploy worker-local logs status \
-        run-adhoc run-backfill run-daily pipeline shell help configure-metabase
+        run-adhoc run-backfill run-daily pipeline shell help configure-metabase \
+        pause-metabase resume-metabase safe-pipeline safe-backfill safe-adhoc
 
 # Default target
 help:
@@ -21,11 +22,20 @@ help:
 	@echo "  make deploy       - Deploy flows to Prefect server"
 	@echo "  make status       - Show deployment status"
 	@echo ""
-	@echo "Run Pipeline:"
+	@echo "Run Pipeline (with DuckDB lock handling):"
+	@echo "  make safe-backfill - Full backfill (pauses Metabase, runs, resumes)"
+	@echo "  make safe-adhoc    - Incremental run (pauses Metabase, runs, resumes)"
+	@echo "  make safe-pipeline - Direct pipeline (pauses Metabase, runs, resumes)"
+	@echo ""
+	@echo "Run Pipeline (manual - requires Metabase stopped):"
 	@echo "  make run-adhoc    - Trigger incremental pipeline run"
 	@echo "  make run-backfill - Trigger full historical backfill"
 	@echo "  make run-daily    - Trigger daily full refresh"
 	@echo "  make pipeline     - Run pipeline directly (no Prefect)"
+	@echo ""
+	@echo "Metabase Control:"
+	@echo "  make pause-metabase  - Stop Metabase to release DuckDB lock"
+	@echo "  make resume-metabase - Restart Metabase after pipeline"
 	@echo ""
 	@echo "Development:"
 	@echo "  make worker-local - Start local Prefect worker"
@@ -106,29 +116,104 @@ status:
 		analytics-worker prefect deployment ls
 
 # =============================================================================
-# Run Pipeline
+# Metabase Control (for DuckDB lock management)
+# =============================================================================
+
+# Stop Metabase to release DuckDB write lock
+pause-metabase:
+	@echo "Pausing Metabase to release DuckDB lock..."
+	@docker-compose -f docker-compose.analytics.yml stop metabase dbt-docs 2>/dev/null || true
+	@echo "Metabase paused. DuckDB is now available for writes."
+
+# Restart Metabase after pipeline completes
+resume-metabase:
+	@echo "Resuming Metabase..."
+	@docker-compose -f docker-compose.analytics.yml start metabase dbt-docs 2>/dev/null || true
+	@echo "Metabase resumed. Dashboard available at http://localhost:3001"
+
+# =============================================================================
+# Safe Pipeline Runs (with automatic Metabase coordination)
+# These targets pause Metabase, run the pipeline, and resume Metabase
+# =============================================================================
+
+# Full backfill with Metabase coordination
+safe-backfill:
+	@echo "=============================================="
+	@echo "Safe Backfill: Coordinating with Metabase"
+	@echo "=============================================="
+	@$(MAKE) pause-metabase
+	@echo ""
+	@echo "Running full backfill..."
+	@docker-compose -f docker-compose.analytics.yml exec \
+		analytics-worker prefect deployment run 'claude-analytics-pipeline/full-backfill' || \
+		(echo "Pipeline failed, resuming Metabase anyway..." && $(MAKE) resume-metabase && exit 1)
+	@echo ""
+	@echo "Waiting for pipeline to complete..."
+	@echo "Monitor progress at: http://localhost:4200"
+	@echo ""
+	@echo "When complete, run: make resume-metabase"
+
+# Incremental run with Metabase coordination
+safe-adhoc:
+	@echo "=============================================="
+	@echo "Safe Ad-hoc Run: Coordinating with Metabase"
+	@echo "=============================================="
+	@$(MAKE) pause-metabase
+	@echo ""
+	@echo "Running incremental pipeline..."
+	@docker-compose -f docker-compose.analytics.yml exec \
+		analytics-worker prefect deployment run 'claude-analytics-pipeline/adhoc-analytics' || \
+		(echo "Pipeline failed, resuming Metabase anyway..." && $(MAKE) resume-metabase && exit 1)
+	@echo ""
+	@echo "Waiting for pipeline to complete..."
+	@echo "Monitor progress at: http://localhost:4200"
+	@echo ""
+	@echo "When complete, run: make resume-metabase"
+
+# Direct pipeline run with Metabase coordination (blocking)
+safe-pipeline:
+	@echo "=============================================="
+	@echo "Safe Pipeline: Coordinating with Metabase"
+	@echo "=============================================="
+	@$(MAKE) pause-metabase
+	@echo ""
+	@echo "Running pipeline (this may take a while)..."
+	@docker-compose -f docker-compose.analytics.yml exec \
+		analytics-worker claude-analytics pipeline --verbose; \
+		RESULT=$$?; \
+		$(MAKE) resume-metabase; \
+		exit $$RESULT
+	@echo ""
+	@echo "Pipeline complete. Metabase resumed."
+
+# =============================================================================
+# Run Pipeline (Manual - requires Metabase to be stopped first)
 # =============================================================================
 
 # Trigger ad-hoc incremental pipeline run
 run-adhoc:
 	@echo "Triggering ad-hoc pipeline run..."
+	@echo "NOTE: If you get lock errors, run 'make safe-adhoc' instead"
 	docker-compose -f docker-compose.analytics.yml exec \
 		analytics-worker prefect deployment run 'claude-analytics-pipeline/adhoc-analytics'
 
 # Trigger full backfill (initial load or recovery)
 run-backfill:
 	@echo "Triggering full backfill..."
+	@echo "NOTE: If you get lock errors, run 'make safe-backfill' instead"
 	docker-compose -f docker-compose.analytics.yml exec \
 		analytics-worker prefect deployment run 'claude-analytics-pipeline/full-backfill'
 
 # Trigger daily full refresh
 run-daily:
 	@echo "Triggering daily full refresh..."
+	@echo "NOTE: If you get lock errors, run 'make pause-metabase' first"
 	docker-compose -f docker-compose.analytics.yml exec \
 		analytics-worker prefect deployment run 'claude-analytics-pipeline/daily-full-refresh'
 
 # Run pipeline directly without Prefect (useful for debugging)
 pipeline:
+	@echo "NOTE: If you get lock errors, run 'make safe-pipeline' instead"
 	docker-compose -f docker-compose.analytics.yml exec \
 		analytics-worker claude-analytics pipeline --verbose
 
