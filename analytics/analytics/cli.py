@@ -59,6 +59,12 @@ def config() -> None:
     console.print(f"[cyan]Data Directory:[/cyan] {settings.data.data_dir}")
     console.print(f"[cyan]Batch Size:[/cyan] {settings.pipeline.batch_size}")
     console.print(f"[cyan]Log Level:[/cyan] {settings.logging.level}")
+    console.print()
+    console.print("[bold]Iceberg Configuration[/bold]")
+    console.print(f"[cyan]Warehouse Path:[/cyan] {settings.iceberg.warehouse_path}")
+    console.print(f"[cyan]Catalog Name:[/cyan] {settings.iceberg.catalog_name}")
+    console.print(f"[cyan]Namespace:[/cyan] {settings.iceberg.namespace}")
+    console.print(f"[cyan]Table Name:[/cyan] {settings.iceberg.table_name}")
 
 
 @app.command()
@@ -74,6 +80,11 @@ def extract(
         "-o",
         help="Output directory for Parquet files (defaults to raw_dir)",
     ),
+    use_iceberg: bool = typer.Option(
+        False,
+        "--iceberg",
+        help="Write to Iceberg table instead of Parquet files",
+    ),
     verbose: bool = typer.Option(
         False,
         "--verbose",
@@ -81,40 +92,60 @@ def extract(
         help="Enable verbose logging",
     ),
 ) -> None:
-    """Extract data from MongoDB to Parquet files."""
-    from analytics.extractor import MongoExtractor
-
+    """Extract data from MongoDB to Parquet files or Iceberg table."""
     setup_logging("DEBUG" if verbose else "INFO")
     settings = get_settings()
 
     console.print("[bold blue]MongoDB Extraction[/bold blue]\n")
     console.print(f"  Source: {settings.mongo.uri}/{settings.mongo.db}.{settings.mongo.collection}")
     console.print(f"  Mode: {'Full Backfill' if full_backfill else 'Incremental'}")
-    console.print(f"  Output: {output_dir or settings.data.raw_dir}")
+    console.print(f"  Format: {'Iceberg' if use_iceberg else 'Parquet'}")
+    if not use_iceberg:
+        console.print(f"  Output: {output_dir or settings.data.raw_dir}")
+    else:
+        console.print(f"  Table: {settings.iceberg.full_table_name}")
     console.print()
 
     try:
-        extractor = MongoExtractor(settings)
-        files = extractor.extract(
-            full_backfill=full_backfill,
-            output_dir=output_dir,
-        )
+        if use_iceberg:
+            from analytics.iceberg_extractor import IcebergExtractor
 
-        if files:
+            extractor = IcebergExtractor(settings)
+            count = extractor.extract(full_backfill=full_backfill)
+
             console.print(f"\n[bold green]Extraction complete![/bold green]")
-            console.print(f"Written {len(files)} Parquet file(s):\n")
+            console.print(f"Written {count} records to Iceberg table")
 
-            table = Table(show_header=True, header_style="bold cyan")
-            table.add_column("File", style="dim")
-            table.add_column("Partition")
-
-            for f in files:
-                partition = f.parent.name if f.parent.name.startswith("date=") else "-"
-                table.add_row(f.name, partition)
-
-            console.print(table)
+            # Show table info
+            info = extractor.get_table_info()
+            if info.get("snapshot_count"):
+                console.print(f"  Snapshots: {info['snapshot_count']}")
+            if info.get("summary", {}).get("added-records"):
+                console.print(f"  Added records: {info['summary']['added-records']}")
         else:
-            console.print("[yellow]No new data to extract[/yellow]")
+            from analytics.extractor import MongoExtractor
+
+            extractor = MongoExtractor(settings)
+            files = extractor.extract(
+                full_backfill=full_backfill,
+                output_dir=output_dir,
+            )
+
+            if files:
+                console.print(f"\n[bold green]Extraction complete![/bold green]")
+                console.print(f"Written {len(files)} Parquet file(s):\n")
+
+                table = Table(show_header=True, header_style="bold cyan")
+                table.add_column("File", style="dim")
+                table.add_column("Partition")
+
+                for f in files:
+                    partition = f.parent.name if f.parent.name.startswith("date=") else "-"
+                    table.add_row(f.name, partition)
+
+                console.print(table)
+            else:
+                console.print("[yellow]No new data to extract[/yellow]")
 
     except Exception as e:
         console.print(f"[bold red]Extraction failed:[/bold red] {e}")
@@ -127,12 +158,17 @@ def load(
         None,
         "--source",
         "-s",
-        help="Source directory for Parquet files (defaults to raw_dir)",
+        help="Source directory for Parquet files or Iceberg table",
     ),
     full_refresh: bool = typer.Option(
         False,
         "--full-refresh",
         help="Truncate table before loading",
+    ),
+    use_iceberg: bool = typer.Option(
+        False,
+        "--iceberg",
+        help="Load from Iceberg table instead of Parquet files",
     ),
     stats: bool = typer.Option(
         False,
@@ -151,17 +187,25 @@ def load(
         help="Enable verbose logging",
     ),
 ) -> None:
-    """Load Parquet files into DuckDB."""
+    """Load Parquet files or Iceberg table into DuckDB."""
     from analytics.loader import DuckDBLoader
 
     setup_logging("DEBUG" if verbose else "INFO")
     settings = get_settings()
 
-    source_path = source_dir or settings.data.raw_dir
+    if use_iceberg:
+        source_path = source_dir or (
+            settings.iceberg.warehouse_path
+            / settings.iceberg.namespace
+            / settings.iceberg.table_name
+        )
+    else:
+        source_path = source_dir or settings.data.raw_dir
 
     console.print("[bold blue]DuckDB Loading[/bold blue]\n")
     console.print(f"  Database: {settings.duckdb.path}")
     console.print(f"  Source: {source_path}")
+    console.print(f"  Format: {'Iceberg' if use_iceberg else 'Parquet'}")
     console.print(f"  Mode: {'Full Refresh' if full_refresh else 'Upsert'}")
     console.print()
 
@@ -172,10 +216,16 @@ def load(
             loader.create_database()
             console.print("[bold green]Database initialized successfully![/bold green]")
         else:
-            rows = loader.load_from_parquet(
-                source_path,
-                full_refresh=full_refresh,
-            )
+            if use_iceberg:
+                rows = loader.load_from_iceberg(
+                    source_path,
+                    full_refresh=full_refresh,
+                )
+            else:
+                rows = loader.load_from_parquet(
+                    source_path,
+                    full_refresh=full_refresh,
+                )
             console.print(f"\n[bold green]Loading complete![/bold green]")
             console.print(f"Rows loaded/updated: {rows}")
 
@@ -295,6 +345,11 @@ def pipeline(
         "--full-refresh",
         help="Rebuild all data and dbt models",
     ),
+    use_iceberg: bool = typer.Option(
+        False,
+        "--iceberg",
+        help="Use Iceberg format instead of Parquet files",
+    ),
     skip_extract: bool = typer.Option(
         False,
         "--skip-extract",
@@ -328,6 +383,7 @@ def pipeline(
     console.print("[bold blue]Claude Analytics Pipeline[/bold blue]\n")
     console.print(f"  Mode: {'Full Backfill' if full_backfill else 'Incremental'}")
     console.print(f"  Refresh: {'Full' if full_refresh else 'Incremental'}")
+    console.print(f"  Format: {'Iceberg' if use_iceberg else 'Parquet'}")
     console.print(f"  Steps: {'Prefect' if use_prefect else 'Direct'}")
     console.print()
 
@@ -338,6 +394,7 @@ def pipeline(
         result = prefect_pipeline(
             full_backfill=full_backfill,
             full_refresh=full_refresh,
+            use_iceberg=use_iceberg,
             skip_extract=skip_extract,
             skip_load=skip_load,
             skip_transform=skip_transform,
@@ -346,7 +403,6 @@ def pipeline(
         console.print(f"Results: {result}")
     else:
         # Direct execution without Prefect
-        from analytics.extractor import MongoExtractor
         from analytics.loader import DuckDBLoader
 
         settings = get_settings()
@@ -355,9 +411,16 @@ def pipeline(
         if not skip_extract:
             console.print("[bold cyan]Step 1: Extract[/bold cyan]")
             try:
-                extractor = MongoExtractor(settings)
-                files = extractor.extract(full_backfill=full_backfill)
-                console.print(f"  [green]✓[/green] Extraction complete: {len(files)} files")
+                if use_iceberg:
+                    from analytics.iceberg_extractor import IcebergExtractor
+                    extractor = IcebergExtractor(settings)
+                    count = extractor.extract(full_backfill=full_backfill)
+                    console.print(f"  [green]✓[/green] Extraction complete: {count} records to Iceberg")
+                else:
+                    from analytics.extractor import MongoExtractor
+                    extractor = MongoExtractor(settings)
+                    files = extractor.extract(full_backfill=full_backfill)
+                    console.print(f"  [green]✓[/green] Extraction complete: {len(files)} files")
             except Exception as e:
                 console.print(f"  [red]✗[/red] Extraction failed: {e}")
                 raise typer.Exit(1)
@@ -369,10 +432,21 @@ def pipeline(
             console.print("[bold cyan]Step 2: Load[/bold cyan]")
             try:
                 loader = DuckDBLoader(settings)
-                rows = loader.load_from_parquet(
-                    settings.data.raw_dir,
-                    full_refresh=full_refresh,
-                )
+                if use_iceberg:
+                    iceberg_path = (
+                        settings.iceberg.warehouse_path
+                        / settings.iceberg.namespace
+                        / settings.iceberg.table_name
+                    )
+                    rows = loader.load_from_iceberg(
+                        iceberg_path,
+                        full_refresh=full_refresh,
+                    )
+                else:
+                    rows = loader.load_from_parquet(
+                        settings.data.raw_dir,
+                        full_refresh=full_refresh,
+                    )
                 console.print(f"  [green]✓[/green] Loading complete: {rows} rows")
                 loader.disconnect()
             except Exception as e:
@@ -513,6 +587,114 @@ def validate(
         console.print("[bold green]All validations passed![/bold green]")
     else:
         console.print("[bold red]Some validations failed[/bold red]")
+        raise typer.Exit(1)
+
+
+@app.command()
+def iceberg(
+    action: str = typer.Argument(
+        "info",
+        help="Action to perform: info, create, drop, snapshots",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Enable verbose logging",
+    ),
+) -> None:
+    """Manage Iceberg table (info, create, drop, snapshots)."""
+    from analytics.iceberg_extractor import IcebergExtractor, IcebergCatalogManager
+
+    setup_logging("DEBUG" if verbose else "INFO")
+    settings = get_settings()
+
+    console.print("[bold blue]Iceberg Table Management[/bold blue]\n")
+    console.print(f"  Warehouse: {settings.iceberg.warehouse_path}")
+    console.print(f"  Table: {settings.iceberg.full_table_name}")
+    console.print()
+
+    catalog_manager = IcebergCatalogManager(settings)
+
+    if action == "info":
+        extractor = IcebergExtractor(settings)
+        info = extractor.get_table_info()
+
+        if info.get("error"):
+            console.print(f"[yellow]Table not found or error: {info['error']}[/yellow]")
+        else:
+            console.print("[bold]Table Information:[/bold]")
+            console.print(f"  Location: {info.get('location', 'N/A')}")
+            console.print(f"  Snapshots: {info.get('snapshot_count', 0)}")
+            console.print(f"  Partition Spec: {info.get('partition_spec', 'N/A')}")
+
+            if info.get("schema_fields"):
+                console.print(f"  Fields: {', '.join(info['schema_fields'])}")
+
+            if info.get("summary"):
+                console.print("\n[bold]Current Snapshot Summary:[/bold]")
+                for key, value in info["summary"].items():
+                    console.print(f"  {key}: {value}")
+
+    elif action == "create":
+        try:
+            table = catalog_manager.get_or_create_table()
+            console.print(f"[green]✓[/green] Table created/verified: {settings.iceberg.full_table_name}")
+            console.print(f"  Location: {table.location()}")
+        except Exception as e:
+            console.print(f"[red]✗[/red] Failed to create table: {e}")
+            raise typer.Exit(1)
+
+    elif action == "drop":
+        confirm = typer.confirm(
+            f"Are you sure you want to drop table '{settings.iceberg.full_table_name}'?"
+        )
+        if confirm:
+            if catalog_manager.drop_table():
+                console.print(f"[green]✓[/green] Table dropped: {settings.iceberg.full_table_name}")
+            else:
+                console.print("[yellow]Table does not exist[/yellow]")
+        else:
+            console.print("[dim]Operation cancelled[/dim]")
+
+    elif action == "snapshots":
+        try:
+            table = catalog_manager.get_or_create_table()
+            snapshots = list(table.snapshots())
+
+            if not snapshots:
+                console.print("[yellow]No snapshots found[/yellow]")
+            else:
+                console.print(f"[bold]Snapshots ({len(snapshots)}):[/bold]\n")
+
+                from rich.table import Table as RichTable
+                tbl = RichTable(show_header=True, header_style="bold cyan")
+                tbl.add_column("Snapshot ID")
+                tbl.add_column("Timestamp")
+                tbl.add_column("Operation")
+                tbl.add_column("Records")
+
+                for snapshot in snapshots[-10:]:  # Show last 10
+                    from datetime import datetime
+                    ts = datetime.fromtimestamp(snapshot.timestamp_ms / 1000)
+                    records = snapshot.summary.get("added-records", "N/A") if snapshot.summary else "N/A"
+                    op = snapshot.summary.get("operation", "N/A") if snapshot.summary else "N/A"
+                    tbl.add_row(
+                        str(snapshot.snapshot_id),
+                        ts.strftime("%Y-%m-%d %H:%M:%S"),
+                        op,
+                        str(records),
+                    )
+
+                console.print(tbl)
+
+        except Exception as e:
+            console.print(f"[red]✗[/red] Failed to list snapshots: {e}")
+            raise typer.Exit(1)
+
+    else:
+        console.print(f"[red]Unknown action: {action}[/red]")
+        console.print("Valid actions: info, create, drop, snapshots")
         raise typer.Exit(1)
 
 

@@ -1,8 +1,8 @@
 """
 DuckDB Loader for Claude Analytics Platform.
 
-Loads Parquet files into DuckDB database with support for both
-full refresh and incremental upsert operations.
+Loads data into DuckDB database with support for both Parquet files
+and Apache Iceberg tables, with full refresh and incremental upsert operations.
 """
 
 import logging
@@ -15,6 +15,9 @@ import duckdb
 from analytics.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
+
+# Iceberg extension installation
+INSTALL_ICEBERG = "INSTALL iceberg; LOAD iceberg;"
 
 # Retry configuration for lock conflicts
 LOCK_RETRY_MAX_ATTEMPTS = 5
@@ -264,6 +267,145 @@ class DuckDBLoader:
             Number of rows affected
         """
         return self.load_from_parquet(parquet_path, full_refresh=False)
+
+    def _install_iceberg_extension(self) -> None:
+        """Install and load the DuckDB Iceberg extension."""
+        try:
+            self.conn.execute("INSTALL iceberg;")
+            self.conn.execute("LOAD iceberg;")
+            logger.info("Iceberg extension installed and loaded")
+        except duckdb.CatalogException as e:
+            if "already loaded" in str(e).lower():
+                logger.debug("Iceberg extension already loaded")
+            else:
+                raise
+
+    def load_from_iceberg(
+        self,
+        iceberg_table_path: Path | str,
+        full_refresh: bool = False,
+    ) -> int:
+        """
+        Load data from an Iceberg table into DuckDB.
+
+        Uses DuckDB's native Iceberg extension to read from Iceberg tables
+        with support for time travel and snapshot isolation.
+
+        Args:
+            iceberg_table_path: Path to the Iceberg table metadata
+            full_refresh: If True, truncate table before loading
+
+        Returns:
+            Number of rows loaded
+        """
+        iceberg_table_path = Path(iceberg_table_path)
+
+        if not iceberg_table_path.exists():
+            raise FileNotFoundError(f"Iceberg table path not found: {iceberg_table_path}")
+
+        # Ensure schema exists
+        self.create_database()
+
+        # Install iceberg extension
+        self._install_iceberg_extension()
+
+        # Find the metadata location
+        metadata_dir = iceberg_table_path / "metadata"
+        if not metadata_dir.exists():
+            raise FileNotFoundError(f"Iceberg metadata not found at: {metadata_dir}")
+
+        # Find the latest metadata file
+        metadata_files = sorted(metadata_dir.glob("*.metadata.json"), reverse=True)
+        if not metadata_files:
+            raise FileNotFoundError(f"No metadata files found in: {metadata_dir}")
+
+        latest_metadata = metadata_files[0]
+        logger.info(f"Using Iceberg metadata: {latest_metadata}")
+
+        # Get count before
+        count_before = self._get_row_count()
+
+        if full_refresh:
+            logger.info("Full refresh: truncating existing data")
+            self.conn.execute("DELETE FROM raw.conversations;")
+
+        # Load data from Iceberg using the iceberg_scan function
+        load_sql = f"""
+        INSERT INTO raw.conversations
+        SELECT
+            _id,
+            type,
+            session_id,
+            project_id,
+            timestamp,
+            ingested_at,
+            extracted_at,
+            message_role,
+            message_content,
+            message_raw,
+            source_file,
+            date
+        FROM iceberg_scan('{latest_metadata}')
+        ON CONFLICT (_id) DO UPDATE SET
+            type = EXCLUDED.type,
+            session_id = EXCLUDED.session_id,
+            project_id = EXCLUDED.project_id,
+            timestamp = EXCLUDED.timestamp,
+            ingested_at = EXCLUDED.ingested_at,
+            extracted_at = EXCLUDED.extracted_at,
+            message_role = EXCLUDED.message_role,
+            message_content = EXCLUDED.message_content,
+            message_raw = EXCLUDED.message_raw,
+            source_file = EXCLUDED.source_file,
+            date = EXCLUDED.date;
+        """
+
+        self.conn.execute(load_sql)
+
+        # Get count after
+        count_after = self._get_row_count()
+        rows_loaded = count_after - count_before if not full_refresh else count_after
+
+        logger.info(f"Loaded {rows_loaded} rows from Iceberg (total: {count_after})")
+        return rows_loaded
+
+    def load_from_iceberg_catalog(
+        self,
+        catalog_path: Path | str,
+        namespace: str,
+        table_name: str,
+        full_refresh: bool = False,
+    ) -> int:
+        """
+        Load data from an Iceberg table using catalog metadata.
+
+        This method constructs the table path from catalog information.
+
+        Args:
+            catalog_path: Path to the Iceberg warehouse
+            namespace: Iceberg namespace
+            table_name: Iceberg table name
+            full_refresh: If True, truncate table before loading
+
+        Returns:
+            Number of rows loaded
+        """
+        # Construct the table path following Iceberg conventions
+        table_path = Path(catalog_path) / namespace / table_name
+
+        return self.load_from_iceberg(table_path, full_refresh=full_refresh)
+
+    def upsert_from_iceberg(self, iceberg_table_path: Path | str) -> int:
+        """
+        Upsert data from Iceberg table into DuckDB.
+
+        Args:
+            iceberg_table_path: Path to Iceberg table
+
+        Returns:
+            Number of rows affected
+        """
+        return self.load_from_iceberg(iceberg_table_path, full_refresh=False)
 
     def _get_row_count(self) -> int:
         """Get current row count in conversations table."""

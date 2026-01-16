@@ -58,6 +58,49 @@ class DuckDBSettings(BaseSettings):
     )
 
 
+class IcebergSettings(BaseSettings):
+    """Apache Iceberg configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="ICEBERG_")
+
+    warehouse_path: Path = Field(
+        default=Path("/data/iceberg"),
+        description="Path to Iceberg warehouse directory",
+    )
+    catalog_name: str = Field(
+        default="default",
+        description="Name of the Iceberg catalog",
+    )
+    catalog_type: Literal["sql", "rest"] = Field(
+        default="sql",
+        description="Type of catalog (sql for SQLite, rest for REST catalog)",
+    )
+    catalog_uri: str | None = Field(
+        default=None,
+        description="URI for catalog database (SQLite path or REST endpoint)",
+    )
+    namespace: str = Field(
+        default="analytics",
+        description="Iceberg namespace for tables",
+    )
+    table_name: str = Field(
+        default="conversations",
+        description="Name of the main Iceberg table",
+    )
+
+    @property
+    def sqlite_catalog_path(self) -> Path:
+        """Get the SQLite catalog database path."""
+        if self.catalog_uri:
+            return Path(self.catalog_uri.replace("sqlite:///", ""))
+        return self.warehouse_path / "catalog.db"
+
+    @property
+    def full_table_name(self) -> str:
+        """Get fully qualified table name."""
+        return f"{self.namespace}.{self.table_name}"
+
+
 class DataSettings(BaseSettings):
     """Data directory configuration."""
 
@@ -69,7 +112,11 @@ class DataSettings(BaseSettings):
     )
     raw_dir: Path = Field(
         default=Path("/data/raw"),
-        description="Directory for raw extracted Parquet files",
+        description="Directory for raw extracted Parquet files (legacy)",
+    )
+    iceberg_dir: Path = Field(
+        default=Path("/data/iceberg"),
+        description="Directory for Iceberg warehouse",
     )
     incremental_dir: Path = Field(
         default=Path("/data/incremental"),
@@ -82,7 +129,7 @@ class DataSettings(BaseSettings):
 
     def ensure_directories(self) -> None:
         """Create data directories if they don't exist."""
-        for directory in [self.data_dir, self.raw_dir, self.incremental_dir, self.dead_letter_dir]:
+        for directory in [self.data_dir, self.raw_dir, self.iceberg_dir, self.incremental_dir, self.dead_letter_dir]:
             directory.mkdir(parents=True, exist_ok=True)
 
 
@@ -202,6 +249,7 @@ class Settings(BaseSettings):
     # Nested settings
     mongo: MongoSettings = Field(default_factory=MongoSettings)
     duckdb: DuckDBSettings = Field(default_factory=DuckDBSettings)
+    iceberg: IcebergSettings = Field(default_factory=IcebergSettings)
     data: DataSettings = Field(default_factory=DataSettings)
     pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
     prefect: PrefectSettings = Field(default_factory=PrefectSettings)
