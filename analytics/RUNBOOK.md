@@ -82,7 +82,7 @@ print('Sessions:', conn.execute('SELECT COUNT(*) FROM marts.dim_sessions').fetch
    | MongoDB connection refused | MongoDB not running | Start MongoDB |
    | DuckDB locked | Concurrent access | Kill other connections |
    | dbt compilation error | SQL syntax | Fix model, run `dbt compile` |
-   | Parquet write error | Disk full | Clear old parquet files |
+   | Iceberg write error | Disk full | Clear old snapshots |
 
 4. Retry the flow:
    ```bash
@@ -195,7 +195,7 @@ make down
 # Remove DuckDB (DESTRUCTIVE)
 docker volume rm analytics_duckdb-data
 
-# Remove Parquet files
+# Remove Iceberg data
 docker volume rm analytics_analytics-data
 
 # Restart infrastructure
@@ -213,7 +213,7 @@ If DuckDB is lost but MongoDB is intact:
 # Run full extraction
 python -m analytics.cli extract --full-backfill
 
-# Load all parquet files
+# Load from Iceberg
 python -m analytics.cli load --full-refresh
 
 # Rebuild dbt models
@@ -273,9 +273,9 @@ make deploy
    docker system df
    ```
 
-2. **Clear old Parquet files** (keep last 7 days):
+2. **Clean up old Iceberg snapshots**:
    ```bash
-   find /data/raw -name "*.parquet" -mtime +7 -delete
+   python -m analytics.cli iceberg expire-snapshots --older-than 7d
    ```
 
 3. **Vacuum DuckDB**:

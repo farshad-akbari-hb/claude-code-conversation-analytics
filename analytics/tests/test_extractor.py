@@ -179,14 +179,29 @@ class TestHighWaterMark:
             assert result is None
 
 
-class TestParquetSchema:
-    """Tests for Parquet schema definition."""
+class TestIcebergSchema:
+    """Tests for Iceberg schema definition."""
 
     def test_schema_has_required_fields(self) -> None:
         """Test that schema has all required fields."""
-        from analytics.extractor import CONVERSATION_SCHEMA
+        from analytics.extractor import ICEBERG_SCHEMA
 
-        field_names = [field.name for field in CONVERSATION_SCHEMA]
+        field_names = [field.name for field in ICEBERG_SCHEMA.fields]
+
+        assert "_id" in field_names
+        assert "type" in field_names
+        assert "session_id" in field_names
+        assert "project_id" in field_names
+        assert "timestamp" in field_names
+        assert "message_role" in field_names
+        assert "message_content" in field_names
+        assert "date" in field_names
+
+    def test_pyarrow_schema_has_required_fields(self) -> None:
+        """Test that PyArrow schema has all required fields."""
+        from analytics.extractor import PYARROW_SCHEMA
+
+        field_names = [field.name for field in PYARROW_SCHEMA]
 
         assert "_id" in field_names
         assert "type" in field_names

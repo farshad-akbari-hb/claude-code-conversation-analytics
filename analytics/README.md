@@ -5,15 +5,15 @@ ELT analytics platform for Claude Code conversation logs. Extracts data from Mon
 ## Architecture
 
 ```
-MongoDB → Python Extractor → Parquet Files → DuckDB → dbt → Metabase
+MongoDB → Python Extractor → Apache Iceberg → DuckDB → dbt → Metabase
                                     ↑
                           Prefect Orchestrator (Hourly)
 ```
 
 ### Data Flow
 
-1. **Extract**: Python pulls conversations from MongoDB, writes to Parquet
-2. **Load**: Parquet files loaded into DuckDB
+1. **Extract**: Python pulls conversations from MongoDB, writes to Iceberg
+2. **Load**: Iceberg tables loaded into DuckDB
 3. **Transform**: dbt models build Bronze → Silver → Gold layers
 4. **Visualize**: Metabase dashboards query DuckDB
 

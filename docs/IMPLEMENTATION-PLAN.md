@@ -2,7 +2,7 @@
 
 ## Overview
 
-Implement an ELT analytics platform for Claude Code conversation logs as specified in `docs/SPEC.md`. The platform extracts data from the existing MongoDB `conversations` collection, loads it into DuckDB via Parquet intermediate files, transforms it using dbt (medallion architecture), and visualizes insights through Metabase.
+Implement an ELT analytics platform for Claude Code conversation logs as specified in `docs/SPEC.md`. The platform extracts data from the existing MongoDB `conversations` collection, loads it into DuckDB via Apache Iceberg tables, transforms it using dbt (medallion architecture), and visualizes insights through Metabase.
 
 ## Decisions Made
 
@@ -22,7 +22,7 @@ Implement an ELT analytics platform for Claude Code conversation logs as specifi
 ## Target Architecture (Initial Release)
 
 ```
-MongoDB (Source) → Python Extractor → Parquet Files → DuckDB → dbt → Metabase
+MongoDB (Source) → Python Extractor → Apache Iceberg → DuckDB → dbt → Metabase
                         ↑
                   Prefect Orchestrator (Batch: Hourly)
 ```
@@ -64,33 +64,33 @@ analytics/
 ---
 
 ### Phase 2: MongoDB Extractor ✅ COMPLETED
-**Goal**: Build Python extractor to read from MongoDB and write Parquet files
+**Goal**: Build Python extractor to read from MongoDB and write to Apache Iceberg tables
 
 **Tasks**:
-- [x] 2.1 Create `analytics/analytics/extractor.py` with `MongoExtractor` class
+- [x] 2.1 Create `analytics/analytics/extractor.py` with `IcebergExtractor` class
   - [x] 2.1.1 Implement `full_extract()` method for historical backfill
   - [x] 2.1.2 Implement `incremental_extract(since: datetime)` method
-  - [x] 2.1.3 Implement `write_parquet(documents, partition_key)` method
+  - [x] 2.1.3 Implement `_write_to_iceberg(records, table)` method
   - [x] 2.1.4 Implement high-water mark tracking (last sync timestamp)
 - [x] 2.2 Create document transformation logic to flatten nested `message` field
-- [x] 2.3 Create Parquet schema definition
-- [x] 2.4 Add date-based partitioning (e.g., `date=2025-01-02/`)
+- [x] 2.3 Create Iceberg schema definition
+- [x] 2.4 Add date-based partitioning
 - [x] 2.5 Create CLI entry point for manual extraction (`python -m analytics.extractor`)
 - [x] 2.6 Add `--full-backfill` flag for initial historical load
 - [x] 2.7 Write unit tests for extractor
 
-**Key Dependencies**: `pymongo`, `pyarrow`, `pandas`
+**Key Dependencies**: `pymongo`, `pyarrow`, `pyiceberg`
 
 ---
 
 ### Phase 3: DuckDB Loader ✅ COMPLETED
-**Goal**: Load Parquet files into DuckDB database
+**Goal**: Load Iceberg tables into DuckDB database
 
 **Tasks**:
 - [x] 3.1 Create `analytics/analytics/loader.py` with `DuckDBLoader` class
   - [x] 3.1.1 Implement `create_database()` - initialize DuckDB with schemas
-  - [x] 3.1.2 Implement `load_from_parquet(path)` - bulk load from files
-  - [x] 3.1.3 Implement `upsert_incremental(path)` - merge new/updated data
+  - [x] 3.1.2 Implement `load_from_iceberg()` - bulk load from Iceberg tables
+  - [x] 3.1.3 Implement `upsert()` - merge new/updated data
 - [x] 3.2 Create raw schema (`raw.conversations`)
 - [x] 3.3 Add indexes for common query patterns
 - [x] 3.4 Create CLI entry point for manual loading
@@ -236,7 +236,7 @@ analytics/
 - [x] 13.1 Update `analytics/Dockerfile` for all dependencies
 - [x] 13.2 Create `docker-compose.analytics.yml`
   - prefect-server, prefect-db, analytics-worker, metabase (no CDC)
-- [x] 13.3 Create volume configurations for DuckDB and Parquet data
+- [x] 13.3 Create volume configurations for DuckDB and Iceberg data
 - [x] 13.4 Add health checks
 - [x] 13.5 Test full stack locally
 
@@ -327,7 +327,7 @@ dbt-duckdb>=1.7
 
 ## Success Criteria
 
-- [x] MongoDB data flows to DuckDB via Parquet
+- [x] MongoDB data flows to DuckDB via Apache Iceberg
 - [x] dbt models pass all tests
 - [x] Metabase dashboards show meaningful metrics
 - [x] Pipeline runs reliably on schedule
