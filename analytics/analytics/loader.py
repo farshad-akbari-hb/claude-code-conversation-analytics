@@ -1,8 +1,8 @@
 """
 DuckDB Loader for Claude Analytics Platform.
 
-Loads data into DuckDB database with support for both Parquet files
-and Apache Iceberg tables, with full refresh and incremental upsert operations.
+Loads data from Apache Iceberg tables into DuckDB database
+with full refresh and incremental upsert operations.
 """
 
 import logging
@@ -15,9 +15,6 @@ import duckdb
 from analytics.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
-
-# Iceberg extension installation
-INSTALL_ICEBERG = "INSTALL iceberg; LOAD iceberg;"
 
 # Retry configuration for lock conflicts
 LOCK_RETRY_MAX_ATTEMPTS = 5
@@ -62,24 +59,6 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_conversations_timestamp ON raw.conversations(timestamp);",
 ]
 
-# SQL for loading and upserting data
-LOAD_FROM_PARQUET = """
-INSERT INTO raw.conversations
-SELECT * FROM read_parquet('{parquet_path}', hive_partitioning=true)
-ON CONFLICT (_id) DO UPDATE SET
-    type = EXCLUDED.type,
-    session_id = EXCLUDED.session_id,
-    project_id = EXCLUDED.project_id,
-    timestamp = EXCLUDED.timestamp,
-    ingested_at = EXCLUDED.ingested_at,
-    extracted_at = EXCLUDED.extracted_at,
-    message_role = EXCLUDED.message_role,
-    message_content = EXCLUDED.message_content,
-    message_raw = EXCLUDED.message_raw,
-    source_file = EXCLUDED.source_file,
-    date = EXCLUDED.date;
-"""
-
 COUNT_ROWS = "SELECT COUNT(*) FROM raw.conversations;"
 
 GET_TABLE_INFO = """
@@ -94,10 +73,10 @@ WHERE table_schema = 'raw' AND table_name = 'conversations';
 
 class DuckDBLoader:
     """
-    Loads Parquet files into DuckDB database.
+    Loads Iceberg tables into DuckDB database.
 
     Supports both full refresh and incremental upsert operations.
-    Uses DuckDB's native Parquet reader with Hive partitioning support.
+    Uses DuckDB's native Iceberg extension for reading Iceberg tables.
     """
 
     def __init__(self, settings: Settings | None = None):
@@ -196,78 +175,6 @@ class DuckDBLoader:
 
         logger.info("Database schema initialization complete")
 
-    def load_from_parquet(
-        self,
-        parquet_path: Path | str,
-        full_refresh: bool = False,
-    ) -> int:
-        """
-        Load Parquet files into DuckDB.
-
-        Args:
-            parquet_path: Path to Parquet file or directory with partitions
-            full_refresh: If True, truncate table before loading
-
-        Returns:
-            Number of rows loaded
-        """
-        parquet_path = Path(parquet_path)
-
-        if not parquet_path.exists():
-            raise FileNotFoundError(f"Parquet path not found: {parquet_path}")
-
-        # Ensure schema exists
-        self.create_database()
-
-        # Build the glob pattern for Parquet files
-        if parquet_path.is_dir():
-            # Directory with partitions: data/raw/**/*.parquet
-            glob_pattern = str(parquet_path / "**" / "*.parquet")
-        else:
-            # Single file
-            glob_pattern = str(parquet_path)
-
-        # Check if any files match
-        matching_files = list(parquet_path.glob("**/*.parquet")) if parquet_path.is_dir() else [parquet_path]
-        if not matching_files:
-            logger.warning(f"No Parquet files found in {parquet_path}")
-            return 0
-
-        logger.info(f"Found {len(matching_files)} Parquet file(s) to load")
-
-        # Get count before
-        count_before = self._get_row_count()
-
-        if full_refresh:
-            logger.info("Full refresh: truncating existing data")
-            self.conn.execute("DELETE FROM raw.conversations;")
-
-        # Load data using upsert (ON CONFLICT)
-        load_sql = LOAD_FROM_PARQUET.format(parquet_path=glob_pattern)
-        self.conn.execute(load_sql)
-
-        # Get count after
-        count_after = self._get_row_count()
-        rows_loaded = count_after - count_before if not full_refresh else count_after
-
-        logger.info(f"Loaded {rows_loaded} rows (total: {count_after})")
-        return rows_loaded
-
-    def upsert_incremental(self, parquet_path: Path | str) -> int:
-        """
-        Upsert Parquet files into DuckDB (insert or update on conflict).
-
-        This is the same as load_from_parquet with full_refresh=False,
-        but with explicit naming for clarity.
-
-        Args:
-            parquet_path: Path to Parquet file or directory
-
-        Returns:
-            Number of rows affected
-        """
-        return self.load_from_parquet(parquet_path, full_refresh=False)
-
     def _install_iceberg_extension(self) -> None:
         """Install and load the DuckDB Iceberg extension."""
         try:
@@ -279,6 +186,28 @@ class DuckDBLoader:
                 logger.debug("Iceberg extension already loaded")
             else:
                 raise
+
+    def load(
+        self,
+        full_refresh: bool = False,
+    ) -> int:
+        """
+        Load data from the configured Iceberg table into DuckDB.
+
+        Uses the Iceberg settings from configuration.
+
+        Args:
+            full_refresh: If True, truncate table before loading
+
+        Returns:
+            Number of rows loaded
+        """
+        iceberg_path = (
+            self.settings.iceberg.warehouse_path
+            / self.settings.iceberg.namespace
+            / self.settings.iceberg.table_name
+        )
+        return self.load_from_iceberg(iceberg_path, full_refresh=full_refresh)
 
     def load_from_iceberg(
         self,
@@ -369,43 +298,14 @@ class DuckDBLoader:
         logger.info(f"Loaded {rows_loaded} rows from Iceberg (total: {count_after})")
         return rows_loaded
 
-    def load_from_iceberg_catalog(
-        self,
-        catalog_path: Path | str,
-        namespace: str,
-        table_name: str,
-        full_refresh: bool = False,
-    ) -> int:
+    def upsert(self) -> int:
         """
-        Load data from an Iceberg table using catalog metadata.
-
-        This method constructs the table path from catalog information.
-
-        Args:
-            catalog_path: Path to the Iceberg warehouse
-            namespace: Iceberg namespace
-            table_name: Iceberg table name
-            full_refresh: If True, truncate table before loading
-
-        Returns:
-            Number of rows loaded
-        """
-        # Construct the table path following Iceberg conventions
-        table_path = Path(catalog_path) / namespace / table_name
-
-        return self.load_from_iceberg(table_path, full_refresh=full_refresh)
-
-    def upsert_from_iceberg(self, iceberg_table_path: Path | str) -> int:
-        """
-        Upsert data from Iceberg table into DuckDB.
-
-        Args:
-            iceberg_table_path: Path to Iceberg table
+        Upsert data from configured Iceberg table into DuckDB.
 
         Returns:
             Number of rows affected
         """
-        return self.load_from_iceberg(iceberg_table_path, full_refresh=False)
+        return self.load(full_refresh=False)
 
     def _get_row_count(self) -> int:
         """Get current row count in conversations table."""
@@ -509,13 +409,7 @@ def main() -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    parser = argparse.ArgumentParser(description="Load Parquet files into DuckDB")
-    parser.add_argument(
-        "parquet_path",
-        type=Path,
-        nargs="?",
-        help="Path to Parquet file or directory",
-    )
+    parser = argparse.ArgumentParser(description="Load Iceberg tables into DuckDB")
     parser.add_argument(
         "--full-refresh",
         action="store_true",
@@ -549,14 +443,9 @@ def main() -> None:
                 print("Type distribution:")
                 for t in stats["type_distribution"]:
                     print(f"  {t['type']}: {t['count']}")
-        elif args.parquet_path:
-            rows = loader.load_from_parquet(
-                args.parquet_path,
-                full_refresh=args.full_refresh,
-            )
-            print(f"Loaded {rows} rows")
         else:
-            parser.print_help()
+            rows = loader.load(full_refresh=args.full_refresh)
+            print(f"Loaded {rows} rows from Iceberg")
     finally:
         loader.disconnect()
 

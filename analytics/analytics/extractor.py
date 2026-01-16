@@ -1,8 +1,8 @@
 """
-MongoDB Extractor for Claude Analytics Platform.
+Apache Iceberg Extractor for Claude Analytics Platform.
 
-Extracts conversation data from MongoDB and writes to Parquet files
-with date-based partitioning for efficient downstream processing.
+Extracts conversation data from MongoDB and writes to Apache Iceberg tables
+with support for ACID transactions, schema evolution, and time travel.
 """
 
 import json
@@ -12,8 +12,16 @@ from pathlib import Path
 from typing import Any, Generator
 
 import pyarrow as pa
-import pyarrow.parquet as pq
-from bson import ObjectId
+from pyiceberg.catalog.sql import SqlCatalog
+from pyiceberg.exceptions import NoSuchTableError, NamespaceAlreadyExistsError
+from pyiceberg.schema import Schema
+from pyiceberg.table import Table
+from pyiceberg.types import (
+    NestedField,
+    StringType,
+    TimestamptzType,
+    DateType,
+)
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.database import Database
@@ -23,35 +31,47 @@ from analytics.config import Settings, get_settings
 logger = logging.getLogger(__name__)
 
 
-# Parquet schema for extracted conversations
-CONVERSATION_SCHEMA = pa.schema([
+# Iceberg schema for conversations table
+ICEBERG_SCHEMA = Schema(
     # Primary identifiers
+    NestedField(field_id=1, name="_id", field_type=StringType(), required=True),
+    NestedField(field_id=2, name="type", field_type=StringType(), required=False),
+    NestedField(field_id=3, name="session_id", field_type=StringType(), required=False),
+    NestedField(field_id=4, name="project_id", field_type=StringType(), required=False),
+    # Timestamps
+    NestedField(field_id=5, name="timestamp", field_type=TimestamptzType(), required=False),
+    NestedField(field_id=6, name="ingested_at", field_type=TimestamptzType(), required=False),
+    NestedField(field_id=7, name="extracted_at", field_type=TimestamptzType(), required=False),
+    # Message content (flattened)
+    NestedField(field_id=8, name="message_role", field_type=StringType(), required=False),
+    NestedField(field_id=9, name="message_content", field_type=StringType(), required=False),
+    NestedField(field_id=10, name="message_raw", field_type=StringType(), required=False),
+    # Source tracking
+    NestedField(field_id=11, name="source_file", field_type=StringType(), required=False),
+    # Partitioning
+    NestedField(field_id=12, name="date", field_type=DateType(), required=False),
+)
+
+# PyArrow schema matching the Iceberg schema (for data conversion)
+PYARROW_SCHEMA = pa.schema([
     ("_id", pa.string()),
     ("type", pa.string()),
     ("session_id", pa.string()),
     ("project_id", pa.string()),
-
-    # Timestamps
     ("timestamp", pa.timestamp("us", tz="UTC")),
     ("ingested_at", pa.timestamp("us", tz="UTC")),
     ("extracted_at", pa.timestamp("us", tz="UTC")),
-
-    # Message content (flattened)
     ("message_role", pa.string()),
     ("message_content", pa.string()),
-    ("message_raw", pa.string()),  # Original JSON for complex messages
-
-    # Source tracking
+    ("message_raw", pa.string()),
     ("source_file", pa.string()),
-
-    # Partitioning
     ("date", pa.date32()),
 ])
 
 
 class DocumentTransformer:
     """
-    Transforms MongoDB documents into a flat structure suitable for Parquet.
+    Transforms MongoDB documents into a flat structure suitable for Iceberg.
 
     Handles the flexible `message` field which can be:
     - A simple string
@@ -125,14 +145,14 @@ class DocumentTransformer:
 
     def transform(self, doc: dict[str, Any], extracted_at: datetime) -> dict[str, Any]:
         """
-        Transform a MongoDB document into a flat record for Parquet.
+        Transform a MongoDB document into a flat record for Iceberg.
 
         Args:
             doc: MongoDB document
             extracted_at: Timestamp of extraction
 
         Returns:
-            Flattened dictionary ready for Parquet
+            Flattened dictionary ready for Iceberg
         """
         # Extract message fields
         message_role, message_content, message_raw = self.flatten_message(
@@ -204,9 +224,111 @@ class HighWaterMark:
         logger.info(f"Updated high water mark to {timestamp.isoformat()}")
 
 
-class MongoExtractor:
+class IcebergCatalogManager:
     """
-    Extracts conversation data from MongoDB and writes to Parquet files.
+    Manages Apache Iceberg catalog and table operations.
+
+    Supports SQLite catalog for local development and REST catalog
+    for production deployments.
+    """
+
+    def __init__(self, settings: Settings | None = None):
+        self.settings = settings or get_settings()
+        self._catalog: SqlCatalog | None = None
+
+    @property
+    def catalog(self) -> SqlCatalog:
+        """Get or create the Iceberg catalog."""
+        if self._catalog is None:
+            self._catalog = self._create_catalog()
+        return self._catalog
+
+    def _create_catalog(self) -> SqlCatalog:
+        """Create and configure the Iceberg catalog."""
+        iceberg_settings = self.settings.iceberg
+        warehouse_path = iceberg_settings.warehouse_path
+
+        # Ensure warehouse directory exists
+        warehouse_path.mkdir(parents=True, exist_ok=True)
+
+        # Configure SQLite catalog
+        catalog_path = iceberg_settings.sqlite_catalog_path
+        catalog_path.parent.mkdir(parents=True, exist_ok=True)
+
+        catalog_uri = f"sqlite:///{catalog_path}"
+
+        logger.info(f"Creating Iceberg catalog at {catalog_uri}")
+        logger.info(f"Warehouse path: {warehouse_path}")
+
+        catalog = SqlCatalog(
+            name=iceberg_settings.catalog_name,
+            **{
+                "uri": catalog_uri,
+                "warehouse": str(warehouse_path),
+            }
+        )
+
+        return catalog
+
+    def ensure_namespace(self) -> None:
+        """Create the namespace if it doesn't exist."""
+        namespace = self.settings.iceberg.namespace
+        try:
+            self.catalog.create_namespace(namespace)
+            logger.info(f"Created namespace: {namespace}")
+        except NamespaceAlreadyExistsError:
+            logger.debug(f"Namespace already exists: {namespace}")
+
+    def get_or_create_table(self) -> Table:
+        """Get the conversations table, creating it if necessary."""
+        self.ensure_namespace()
+
+        table_name = self.settings.iceberg.full_table_name
+
+        try:
+            table = self.catalog.load_table(table_name)
+            logger.info(f"Loaded existing table: {table_name}")
+            return table
+        except NoSuchTableError:
+            logger.info(f"Creating new table: {table_name}")
+
+            # Create table with date partitioning
+            from pyiceberg.partitioning import PartitionSpec, PartitionField
+            from pyiceberg.transforms import DayTransform
+
+            partition_spec = PartitionSpec(
+                PartitionField(
+                    source_id=12,  # date field
+                    field_id=1000,
+                    transform=DayTransform(),
+                    name="date_day",
+                )
+            )
+
+            table = self.catalog.create_table(
+                identifier=table_name,
+                schema=ICEBERG_SCHEMA,
+                partition_spec=partition_spec,
+            )
+
+            logger.info(f"Created table: {table_name}")
+            return table
+
+    def drop_table(self) -> bool:
+        """Drop the conversations table if it exists."""
+        table_name = self.settings.iceberg.full_table_name
+        try:
+            self.catalog.drop_table(table_name)
+            logger.info(f"Dropped table: {table_name}")
+            return True
+        except NoSuchTableError:
+            logger.info(f"Table does not exist: {table_name}")
+            return False
+
+
+class IcebergExtractor:
+    """
+    Extracts conversation data from MongoDB and writes to Apache Iceberg tables.
 
     Supports both full historical backfill and incremental extraction
     based on high water mark tracking.
@@ -216,6 +338,7 @@ class MongoExtractor:
         self.settings = settings or get_settings()
         self.transformer = DocumentTransformer()
         self.high_water_mark = HighWaterMark(self.settings.pipeline.high_water_mark_file)
+        self.catalog_manager = IcebergCatalogManager(settings)
 
         self._client: MongoClient | None = None
         self._db: Database | None = None
@@ -288,63 +411,48 @@ class MongoExtractor:
 
         logger.info(f"Total documents fetched: {count}")
 
-    def _write_partition(
+    def _write_to_iceberg(
         self,
         records: list[dict[str, Any]],
-        partition_date: datetime,
-        output_dir: Path,
-    ) -> Path:
+        table: Table,
+    ) -> int:
         """
-        Write records to a Parquet file in date-partitioned directory.
+        Write records to Iceberg table using append operation.
 
         Args:
             records: List of transformed records
-            partition_date: Date for partitioning
-            output_dir: Base output directory
+            table: Iceberg table to write to
 
         Returns:
-            Path to written Parquet file
+            Number of records written
         """
-        # Create partition directory
-        date_str = partition_date.strftime("%Y-%m-%d")
-        partition_dir = output_dir / f"date={date_str}"
-        partition_dir.mkdir(parents=True, exist_ok=True)
+        if not records:
+            return 0
 
-        # Generate unique filename with timestamp
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
-        file_path = partition_dir / f"conversations_{timestamp}.parquet"
+        # Create PyArrow table from records
+        arrow_table = pa.Table.from_pylist(records, schema=PYARROW_SCHEMA)
 
-        # Create PyArrow table
-        table = pa.Table.from_pylist(records, schema=CONVERSATION_SCHEMA)
+        # Append to Iceberg table
+        table.append(arrow_table)
 
-        # Write Parquet file with compression
-        pq.write_table(
-            table,
-            file_path,
-            compression="snappy",
-            write_statistics=True,
-        )
-
-        logger.info(f"Wrote {len(records)} records to {file_path}")
-        return file_path
+        logger.info(f"Appended {len(records)} records to Iceberg table")
+        return len(records)
 
     def extract(
         self,
         full_backfill: bool = False,
-        output_dir: Path | None = None,
-    ) -> list[Path]:
+    ) -> int:
         """
-        Extract data from MongoDB and write to Parquet files.
+        Extract data from MongoDB and write to Iceberg table.
 
         Args:
             full_backfill: If True, extract all data ignoring high water mark
-            output_dir: Output directory for Parquet files
 
         Returns:
-            List of paths to written Parquet files
+            Total number of records extracted
         """
-        output_dir = output_dir or self.settings.data.raw_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # Get or create the Iceberg table
+        table = self.catalog_manager.get_or_create_table()
 
         # Determine start time
         since = None
@@ -358,12 +466,9 @@ class MongoExtractor:
             logger.info("Full backfill requested, extracting all data")
 
         extracted_at = datetime.now(timezone.utc)
-        written_files: list[Path] = []
-
-        # Group records by date for partitioned writing
-        records_by_date: dict[str, list[dict[str, Any]]] = {}
         latest_ingested_at: datetime | None = None
         total_count = 0
+        batch: list[dict[str, Any]] = []
 
         try:
             self.connect()
@@ -371,12 +476,7 @@ class MongoExtractor:
             for doc in self._fetch_documents(since=since):
                 # Transform document
                 record = self.transformer.transform(doc, extracted_at)
-
-                # Group by partition date
-                date_key = record["date"].isoformat() if record["date"] else "unknown"
-                if date_key not in records_by_date:
-                    records_by_date[date_key] = []
-                records_by_date[date_key].append(record)
+                batch.append(record)
 
                 # Track latest ingested_at for high water mark
                 if record["ingested_at"]:
@@ -385,69 +485,80 @@ class MongoExtractor:
 
                 total_count += 1
 
-                # Write partitions when they get large enough
-                for date_key in list(records_by_date.keys()):
-                    if len(records_by_date[date_key]) >= self.settings.pipeline.batch_size:
-                        partition_date = datetime.fromisoformat(date_key)
-                        file_path = self._write_partition(
-                            records_by_date[date_key],
-                            partition_date,
-                            output_dir,
-                        )
-                        written_files.append(file_path)
-                        records_by_date[date_key] = []
+                # Write batch when it reaches the configured size
+                if len(batch) >= self.settings.pipeline.batch_size:
+                    self._write_to_iceberg(batch, table)
+                    batch = []
 
             # Write remaining records
-            for date_key, records in records_by_date.items():
-                if records:
-                    try:
-                        partition_date = datetime.fromisoformat(date_key)
-                    except ValueError:
-                        partition_date = extracted_at
-                    file_path = self._write_partition(records, partition_date, output_dir)
-                    written_files.append(file_path)
+            if batch:
+                self._write_to_iceberg(batch, table)
 
             # Update high water mark
             if latest_ingested_at:
                 self.high_water_mark.set(latest_ingested_at)
 
-            logger.info(
-                f"Extraction complete: {total_count} documents, "
-                f"{len(written_files)} Parquet files"
-            )
+            logger.info(f"Extraction complete: {total_count} documents to Iceberg")
 
         finally:
             self.disconnect()
 
-        return written_files
+        return total_count
 
-    def full_extract(self, output_dir: Path | None = None) -> list[Path]:
+    def full_extract(self) -> int:
         """
         Perform full historical extraction (ignores high water mark).
 
-        Args:
-            output_dir: Output directory for Parquet files
-
         Returns:
-            List of paths to written Parquet files
+            Total number of records extracted
         """
-        return self.extract(full_backfill=True, output_dir=output_dir)
+        return self.extract(full_backfill=True)
 
-    def incremental_extract(self, output_dir: Path | None = None) -> list[Path]:
+    def incremental_extract(self) -> int:
         """
         Perform incremental extraction based on high water mark.
 
-        Args:
-            output_dir: Output directory for Parquet files
-
         Returns:
-            List of paths to written Parquet files
+            Total number of records extracted
         """
-        return self.extract(full_backfill=False, output_dir=output_dir)
+        return self.extract(full_backfill=False)
+
+    def get_table_info(self) -> dict[str, Any]:
+        """Get information about the Iceberg table."""
+        try:
+            table = self.catalog_manager.get_or_create_table()
+
+            # Get snapshot info
+            current_snapshot = table.current_snapshot()
+
+            info = {
+                "table_name": self.settings.iceberg.full_table_name,
+                "location": str(table.location()),
+                "schema_fields": [field.name for field in table.schema().fields],
+                "partition_spec": str(table.spec()),
+            }
+
+            if current_snapshot:
+                info["current_snapshot_id"] = current_snapshot.snapshot_id
+                info["snapshot_timestamp"] = current_snapshot.timestamp_ms
+
+                # Get summary stats if available
+                if current_snapshot.summary:
+                    info["summary"] = dict(current_snapshot.summary)
+
+            # Get snapshot history
+            snapshots = list(table.snapshots())
+            info["snapshot_count"] = len(snapshots)
+
+            return info
+
+        except Exception as e:
+            logger.error(f"Error getting table info: {e}")
+            return {"error": str(e)}
 
 
 def main() -> None:
-    """CLI entry point for extractor."""
+    """CLI entry point for Iceberg extractor."""
     import argparse
 
     logging.basicConfig(
@@ -455,29 +566,30 @@ def main() -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    parser = argparse.ArgumentParser(description="Extract MongoDB data to Parquet")
+    parser = argparse.ArgumentParser(description="Extract MongoDB data to Iceberg")
     parser.add_argument(
         "--full-backfill",
         action="store_true",
         help="Extract all historical data",
     )
     parser.add_argument(
-        "--output-dir",
-        type=Path,
-        help="Output directory for Parquet files",
+        "--info",
+        action="store_true",
+        help="Show table information",
     )
 
     args = parser.parse_args()
 
-    extractor = MongoExtractor()
-    files = extractor.extract(
-        full_backfill=args.full_backfill,
-        output_dir=args.output_dir,
-    )
+    extractor = IcebergExtractor()
 
-    print(f"Extraction complete. Written files:")
-    for f in files:
-        print(f"  {f}")
+    if args.info:
+        info = extractor.get_table_info()
+        print("Iceberg Table Info:")
+        for key, value in info.items():
+            print(f"  {key}: {value}")
+    else:
+        count = extractor.extract(full_backfill=args.full_backfill)
+        print(f"Extraction complete. {count} records written to Iceberg.")
 
 
 if __name__ == "__main__":

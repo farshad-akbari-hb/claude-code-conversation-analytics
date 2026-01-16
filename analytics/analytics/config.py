@@ -110,18 +110,6 @@ class DataSettings(BaseSettings):
         default=Path("/data"),
         description="Base directory for all data files",
     )
-    raw_dir: Path = Field(
-        default=Path("/data/raw"),
-        description="Directory for raw extracted Parquet files (legacy)",
-    )
-    iceberg_dir: Path = Field(
-        default=Path("/data/iceberg"),
-        description="Directory for Iceberg warehouse",
-    )
-    incremental_dir: Path = Field(
-        default=Path("/data/incremental"),
-        description="Directory for incremental updates",
-    )
     dead_letter_dir: Path = Field(
         default=Path("/data/dead_letter"),
         description="Directory for failed records",
@@ -129,7 +117,7 @@ class DataSettings(BaseSettings):
 
     def ensure_directories(self) -> None:
         """Create data directories if they don't exist."""
-        for directory in [self.data_dir, self.raw_dir, self.iceberg_dir, self.incremental_dir, self.dead_letter_dir]:
+        for directory in [self.data_dir, self.dead_letter_dir]:
             directory.mkdir(parents=True, exist_ok=True)
 
 

@@ -2,8 +2,8 @@
 Main analytics pipeline flow for Claude Analytics.
 
 This module defines the core ELT pipeline that orchestrates:
-1. Extract: Pull data from MongoDB to Parquet files or Iceberg tables
-2. Load: Load Parquet/Iceberg data into DuckDB
+1. Extract: Pull data from MongoDB to Iceberg tables
+2. Load: Load Iceberg data into DuckDB
 3. Transform: Run dbt models to build analytics layer
 """
 
@@ -14,7 +14,6 @@ from typing import Optional
 from prefect import flow, task, get_run_logger
 
 from analytics.config import get_settings
-from analytics.extractor import MongoExtractor
 from analytics.loader import DuckDBLoader
 
 
@@ -24,81 +23,61 @@ RETRY_DELAYS = [30, 60, 120]  # seconds
 
 @task(
     name="extract-mongodb",
-    description="Extract data from MongoDB to Parquet files or Iceberg table",
+    description="Extract data from MongoDB to Iceberg table",
     retries=3,
     retry_delay_seconds=RETRY_DELAYS,
 )
-def extract_task(full_backfill: bool = False, use_iceberg: bool = False) -> dict:
+def extract_task(full_backfill: bool = False) -> dict:
     """
-    Extract data from MongoDB and write to Parquet files or Iceberg table.
+    Extract data from MongoDB and write to Iceberg table.
 
     Args:
         full_backfill: If True, extract all historical data
-        use_iceberg: If True, write to Iceberg table instead of Parquet files
 
     Returns:
         Dictionary with extraction statistics
     """
+    from analytics.extractor import IcebergExtractor
+
     logger = get_run_logger()
     settings = get_settings()
 
-    logger.info(f"Starting MongoDB extraction (format={'Iceberg' if use_iceberg else 'Parquet'})")
+    logger.info("Starting MongoDB extraction to Iceberg")
 
-    if use_iceberg:
-        from analytics.iceberg_extractor import IcebergExtractor
-        extractor = IcebergExtractor(settings=settings)
+    extractor = IcebergExtractor(settings=settings)
 
-        try:
-            if full_backfill:
-                logger.info("Running full backfill extraction to Iceberg")
-                count = extractor.full_extract()
-            else:
-                logger.info("Running incremental extraction to Iceberg")
-                count = extractor.incremental_extract()
+    try:
+        if full_backfill:
+            logger.info("Running full backfill extraction")
+            count = extractor.full_extract()
+        else:
+            logger.info("Running incremental extraction")
+            count = extractor.incremental_extract()
 
-            stats = {"records_written": count, "format": "iceberg"}
-            logger.info(f"Extraction complete: {stats}")
-            return stats
+        stats = {"records_written": count}
+        logger.info(f"Extraction complete: {stats}")
+        return stats
 
-        finally:
-            extractor.disconnect()
-    else:
-        extractor = MongoExtractor(settings=settings)
-
-        try:
-            if full_backfill:
-                logger.info("Running full backfill extraction to Parquet")
-                files = extractor.full_extract()
-            else:
-                logger.info("Running incremental extraction to Parquet")
-                files = extractor.incremental_extract()
-
-            stats = {"files_written": len(files), "format": "parquet"}
-            logger.info(f"Extraction complete: {stats}")
-            return stats
-
-        finally:
-            extractor.disconnect()
+    finally:
+        extractor.disconnect()
 
 
 @task(
     name="load-duckdb",
-    description="Load Parquet files or Iceberg table into DuckDB",
+    description="Load Iceberg table into DuckDB",
     retries=3,
     retry_delay_seconds=RETRY_DELAYS,
 )
 def load_task(
     extraction_stats: dict,
     full_refresh: bool = False,
-    use_iceberg: bool = False,
 ) -> dict:
     """
-    Load Parquet files or Iceberg table into DuckDB.
+    Load Iceberg table into DuckDB.
 
     Args:
         extraction_stats: Stats from extraction task (for dependency)
         full_refresh: If True, reload all data
-        use_iceberg: If True, load from Iceberg table instead of Parquet files
 
     Returns:
         Dictionary with loading statistics
@@ -106,11 +85,7 @@ def load_task(
     logger = get_run_logger()
     settings = get_settings()
 
-    # Auto-detect format from extraction stats if available
-    source_format = extraction_stats.get("format", "iceberg" if use_iceberg else "parquet")
-    use_iceberg = source_format == "iceberg"
-
-    logger.info(f"Starting DuckDB loading from {source_format}")
+    logger.info("Starting DuckDB loading from Iceberg")
 
     loader = DuckDBLoader(settings=settings)
 
@@ -118,35 +93,20 @@ def load_task(
         # Ensure database and schema exist
         loader.create_database()
 
-        if use_iceberg:
-            iceberg_path = (
-                settings.iceberg.warehouse_path
-                / settings.iceberg.namespace
-                / settings.iceberg.table_name
-            )
-            if full_refresh:
-                logger.info(f"Running full load from Iceberg: {iceberg_path}")
-                stats = loader.load_from_iceberg(iceberg_path, full_refresh=True)
-            else:
-                logger.info(f"Running incremental upsert from Iceberg: {iceberg_path}")
-                stats = loader.upsert_from_iceberg(iceberg_path)
+        if full_refresh:
+            logger.info("Running full load from Iceberg")
+            rows = loader.load(full_refresh=True)
         else:
-            parquet_path = Path(settings.data.raw_dir)
-            if full_refresh:
-                logger.info(f"Running full load from Parquet: {parquet_path}")
-                stats = loader.load_from_parquet(str(parquet_path), full_refresh=True)
-            else:
-                logger.info(f"Running incremental upsert from Parquet: {parquet_path}")
-                stats = loader.upsert_incremental(str(parquet_path))
+            logger.info("Running incremental upsert from Iceberg")
+            rows = loader.upsert()
 
         # Get final stats
         table_stats = loader.get_table_stats()
         logger.info(f"Load complete. Table stats: {table_stats}")
 
         return {
-            "load_stats": stats,
+            "rows_loaded": rows,
             "table_stats": table_stats,
-            "source_format": source_format,
         }
 
     finally:
@@ -222,12 +182,11 @@ def transform_task(
 @flow(
     name="claude-analytics-pipeline",
     description="Main ELT pipeline for Claude conversation analytics",
-    version="1.1.0",
+    version="2.0.0",
 )
 def analytics_pipeline(
     full_backfill: bool = False,
     full_refresh: bool = False,
-    use_iceberg: bool = False,
     skip_extract: bool = False,
     skip_load: bool = False,
     skip_transform: bool = False,
@@ -239,7 +198,6 @@ def analytics_pipeline(
     Args:
         full_backfill: Extract all historical data from MongoDB
         full_refresh: Reload all data and rebuild dbt models
-        use_iceberg: Use Iceberg format instead of Parquet files
         skip_extract: Skip extraction step
         skip_load: Skip loading step
         skip_transform: Skip transformation step
@@ -252,22 +210,21 @@ def analytics_pipeline(
     results = {}
 
     logger.info("Starting Claude Analytics Pipeline")
-    logger.info(f"Options: backfill={full_backfill}, refresh={full_refresh}, iceberg={use_iceberg}")
+    logger.info(f"Options: backfill={full_backfill}, refresh={full_refresh}")
 
     # Step 1: Extract
     if not skip_extract:
-        extraction_stats = extract_task(full_backfill=full_backfill, use_iceberg=use_iceberg)
+        extraction_stats = extract_task(full_backfill=full_backfill)
         results["extraction"] = extraction_stats
     else:
         logger.info("Skipping extraction step")
-        results["extraction"] = {"skipped": True, "format": "iceberg" if use_iceberg else "parquet"}
+        results["extraction"] = {"skipped": True}
 
     # Step 2: Load
     if not skip_load:
         load_stats = load_task(
             extraction_stats=results["extraction"],
             full_refresh=full_refresh,
-            use_iceberg=use_iceberg,
         )
         results["load"] = load_stats
     else:

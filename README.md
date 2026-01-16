@@ -8,16 +8,7 @@ A complete platform for syncing, browsing, and analyzing Claude Code conversatio
 |-----------|-------------|------------|
 | **Sync Service** | Real-time JSONL to MongoDB sync with SQLite buffering | TypeScript, chokidar, better-sqlite3 |
 | **UI** | Web interface for browsing conversation logs | Next.js, React, shadcn/ui, TanStack Query |
-| **Analytics** | ELT pipeline with dimensional modeling | Python, dbt, DuckDB, Prefect, Metabase |
-
-### Storage Formats
-
-The analytics pipeline supports two storage formats:
-
-| Format | Description | Use Case |
-|--------|-------------|----------|
-| **Parquet** (default) | Columnar file format with date partitioning | Simple deployments, quick setup |
-| **Apache Iceberg** | Table format with ACID transactions, schema evolution, time travel | Production workloads, data versioning |
+| **Analytics** | ELT pipeline with dimensional modeling | Python, dbt, DuckDB, Apache Iceberg, Prefect, Metabase |
 
 ## Architecture
 
@@ -50,7 +41,7 @@ The analytics pipeline supports two storage formats:
                │
                ▼
      ┌─────────────────┐
-     │ Parquet/Iceberg │
+     │ Apache Iceberg  │
      └────────┬────────┘
                │
                ▼
@@ -190,17 +181,17 @@ make down            # Stop all services
 make logs            # View worker logs
 make status          # Show deployment status
 
-# Pipeline runs (Parquet - default)
+# Pipeline runs
 make deploy          # Deploy flows to Prefect server
 make run-backfill    # Initial full backfill
 make run-adhoc       # Incremental run
 make run-daily       # Daily full refresh
 make pipeline        # Run directly (no Prefect)
 
-# Pipeline runs (Iceberg)
-python -m analytics.cli extract --iceberg --full-backfill   # Extract to Iceberg
-python -m analytics.cli load --iceberg                       # Load from Iceberg
-python -m analytics.cli pipeline --iceberg                   # Full pipeline with Iceberg
+# CLI commands
+python -m analytics.cli extract --full-backfill   # Extract to Iceberg
+python -m analytics.cli load                       # Load from Iceberg to DuckDB
+python -m analytics.cli pipeline                   # Full pipeline
 
 # Iceberg table management
 python -m analytics.cli iceberg info       # Show table info
@@ -278,15 +269,10 @@ db.conversations.aggregate([
 |----------|---------|-------------|
 | `DUCKDB_PATH` | `/duckdb/analytics.db` | DuckDB file path |
 | `DBT_TARGET` | `dev` | dbt profile target |
-
-### Iceberg (Optional)
-
-| Variable | Default | Description |
-|----------|---------|-------------|
 | `ICEBERG_WAREHOUSE_PATH` | `/data/iceberg` | Iceberg warehouse directory |
-| `ICEBERG_CATALOG_NAME` | `default` | Catalog name |
+| `ICEBERG_CATALOG_NAME` | `default` | Iceberg catalog name |
 | `ICEBERG_NAMESPACE` | `analytics` | Iceberg namespace |
-| `ICEBERG_TABLE_NAME` | `conversations` | Table name |
+| `ICEBERG_TABLE_NAME` | `conversations` | Iceberg table name |
 
 ## Resilience
 
