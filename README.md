@@ -10,6 +10,15 @@ A complete platform for syncing, browsing, and analyzing Claude Code conversatio
 | **UI** | Web interface for browsing conversation logs | Next.js, React, shadcn/ui, TanStack Query |
 | **Analytics** | ELT pipeline with dimensional modeling | Python, dbt, DuckDB, Prefect, Metabase |
 
+### Storage Formats
+
+The analytics pipeline supports two storage formats:
+
+| Format | Description | Use Case |
+|--------|-------------|----------|
+| **Parquet** (default) | Columnar file format with date partitioning | Simple deployments, quick setup |
+| **Apache Iceberg** | Table format with ACID transactions, schema evolution, time travel | Production workloads, data versioning |
+
 ## Architecture
 
 ```
@@ -38,6 +47,11 @@ A complete platform for syncing, browsing, and analyzing Claude Code conversatio
 │  UI  │  │ Analytics│             │ Service │
 │(3000)│  │ Extractor│             └─────────┘
 └──────┘  └────┬─────┘
+               │
+               ▼
+     ┌─────────────────┐
+     │ Parquet/Iceberg │
+     └────────┬────────┘
                │
                ▼
           ┌─────────┐
@@ -176,12 +190,23 @@ make down            # Stop all services
 make logs            # View worker logs
 make status          # Show deployment status
 
-# Pipeline runs
+# Pipeline runs (Parquet - default)
 make deploy          # Deploy flows to Prefect server
 make run-backfill    # Initial full backfill
 make run-adhoc       # Incremental run
 make run-daily       # Daily full refresh
 make pipeline        # Run directly (no Prefect)
+
+# Pipeline runs (Iceberg)
+python -m analytics.cli extract --iceberg --full-backfill   # Extract to Iceberg
+python -m analytics.cli load --iceberg                       # Load from Iceberg
+python -m analytics.cli pipeline --iceberg                   # Full pipeline with Iceberg
+
+# Iceberg table management
+python -m analytics.cli iceberg info       # Show table info
+python -m analytics.cli iceberg snapshots  # List snapshots (time travel)
+python -m analytics.cli iceberg create     # Create table
+python -m analytics.cli iceberg drop       # Drop table
 ```
 
 ## Monitoring
@@ -253,6 +278,15 @@ db.conversations.aggregate([
 |----------|---------|-------------|
 | `DUCKDB_PATH` | `/duckdb/analytics.db` | DuckDB file path |
 | `DBT_TARGET` | `dev` | dbt profile target |
+
+### Iceberg (Optional)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ICEBERG_WAREHOUSE_PATH` | `/data/iceberg` | Iceberg warehouse directory |
+| `ICEBERG_CATALOG_NAME` | `default` | Catalog name |
+| `ICEBERG_NAMESPACE` | `analytics` | Iceberg namespace |
+| `ICEBERG_TABLE_NAME` | `conversations` | Table name |
 
 ## Resilience
 

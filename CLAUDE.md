@@ -30,6 +30,13 @@ make run-backfill    # Initial full backfill
 make run-adhoc       # Incremental run
 make logs            # View worker logs
 
+# Analytics with Iceberg (alternative to Parquet)
+python -m analytics.cli extract --iceberg   # Extract to Iceberg table
+python -m analytics.cli load --iceberg      # Load from Iceberg to DuckDB
+python -m analytics.cli pipeline --iceberg  # Full pipeline with Iceberg
+python -m analytics.cli iceberg info        # Show Iceberg table info
+python -m analytics.cli iceberg snapshots   # List table snapshots
+
 # Production (PM2)
 cd sync-service && pm2 start ecosystem.config.js
 pm2 logs claude-mongo-sync
@@ -73,6 +80,11 @@ This project has three main components:
 └──────┘  └────┬─────┘             └─────────┘
                │
                ▼
+     ┌─────────────────┐
+     │ Parquet/Iceberg │
+     └────────┬────────┘
+               │
+               ▼
           ┌─────────┐
           │ DuckDB  │ ← dbt (Bronze→Silver→Gold)
           └────┬────┘
@@ -98,9 +110,11 @@ This project has three main components:
 
 | Path | Responsibility |
 |------|----------------|
-| `analytics/analytics/extractor.py` | MongoDB extraction to Parquet |
-| `analytics/analytics/loader.py` | DuckDB loading |
+| `analytics/analytics/extractor.py` | MongoDB extraction to Parquet files |
+| `analytics/analytics/iceberg_extractor.py` | MongoDB extraction to Iceberg tables |
+| `analytics/analytics/loader.py` | DuckDB loading (Parquet & Iceberg) |
 | `analytics/analytics/cli.py` | CLI entry point |
+| `analytics/analytics/config.py` | Configuration (Parquet & Iceberg settings) |
 | `analytics/analytics/flows/` | Prefect orchestration flows |
 | `analytics/dbt/models/staging/` | Bronze layer (cleaned source) |
 | `analytics/dbt/models/intermediate/` | Silver layer (enriched) |
@@ -113,6 +127,8 @@ This project has three main components:
 - **Processing lock**: `Watcher.processing` Set prevents concurrent processing of same file
 - **ordered: false**: MongoDB insertMany uses unordered for partial success on duplicates
 - **Medallion architecture**: dbt models follow Bronze→Silver→Gold pattern for analytics
+- **Dual storage format**: Parquet (simple) vs Iceberg (ACID, schema evolution, time travel)
+- **SQLite Iceberg catalog**: Local development catalog, upgradable to REST catalog for production
 
 ## Configuration
 
@@ -142,6 +158,16 @@ Copy `.env.analytics.example` to `.env.analytics` in the analytics directory.
 |----------|---------|---------|
 | `DUCKDB_PATH` | `/duckdb/analytics.db` | DuckDB file path |
 | `DBT_TARGET` | `dev` | dbt profile target |
+
+### Iceberg (Optional)
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ICEBERG_WAREHOUSE_PATH` | `/data/iceberg` | Iceberg warehouse directory |
+| `ICEBERG_CATALOG_NAME` | `default` | Catalog name |
+| `ICEBERG_CATALOG_TYPE` | `sql` | Catalog type (sql for SQLite, rest for REST) |
+| `ICEBERG_NAMESPACE` | `analytics` | Iceberg namespace |
+| `ICEBERG_TABLE_NAME` | `conversations` | Table name |
 
 ## Testing
 
