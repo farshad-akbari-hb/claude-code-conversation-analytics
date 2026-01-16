@@ -53,19 +53,20 @@ ICEBERG_SCHEMA = Schema(
 )
 
 # PyArrow schema matching the Iceberg schema (for data conversion)
+# Note: _id must be non-nullable to match the Iceberg schema (required=True)
 PYARROW_SCHEMA = pa.schema([
-    ("_id", pa.string()),
-    ("type", pa.string()),
-    ("session_id", pa.string()),
-    ("project_id", pa.string()),
-    ("timestamp", pa.timestamp("us", tz="UTC")),
-    ("ingested_at", pa.timestamp("us", tz="UTC")),
-    ("extracted_at", pa.timestamp("us", tz="UTC")),
-    ("message_role", pa.string()),
-    ("message_content", pa.string()),
-    ("message_raw", pa.string()),
-    ("source_file", pa.string()),
-    ("date", pa.date32()),
+    pa.field("_id", pa.string(), nullable=False),
+    pa.field("type", pa.string(), nullable=True),
+    pa.field("session_id", pa.string(), nullable=True),
+    pa.field("project_id", pa.string(), nullable=True),
+    pa.field("timestamp", pa.timestamp("us", tz="UTC"), nullable=True),
+    pa.field("ingested_at", pa.timestamp("us", tz="UTC"), nullable=True),
+    pa.field("extracted_at", pa.timestamp("us", tz="UTC"), nullable=True),
+    pa.field("message_role", pa.string(), nullable=True),
+    pa.field("message_content", pa.string(), nullable=True),
+    pa.field("message_raw", pa.string(), nullable=True),
+    pa.field("source_file", pa.string(), nullable=True),
+    pa.field("date", pa.date32(), nullable=True),
 ])
 
 
