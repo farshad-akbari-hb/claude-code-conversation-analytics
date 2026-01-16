@@ -210,7 +210,13 @@ services:
       dockerfile: Dockerfile
     container_name: dbt-docs
     command: >
-      sh -c "cd /app/dbt && dbt docs generate && dbt docs serve --port 8080"
+      sh -c "
+        echo 'Waiting for DuckDB to be initialized...' &&
+        sleep 10 &&
+        cd /app/dbt &&
+        dbt docs generate &&
+        dbt docs serve --port 8080
+      "
     environment:
       - DUCKDB_PATH=/duckdb/analytics.db
       - DBT_PROJECT_DIR=/app/dbt
@@ -221,8 +227,11 @@ services:
     volumes:
       # DuckDB needs write access for lock files even when reading
       - duckdb-data:/duckdb
+    depends_on:
+      - analytics-worker
     networks:
       - analytics-network
+    restart: unless-stopped
 
 # ==========================================================================
 # Networks

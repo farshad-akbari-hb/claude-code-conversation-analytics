@@ -177,4 +177,4 @@ cd analytics && make status
 | UI | 3000 | Next.js application |
 | Prefect UI | 4200 | Pipeline orchestration |
 | Metabase | 3001 | Dashboards & analytics |
-| dbt Docs | 8080 | Data model documentation |
+| dbt Docs | 8686 | Data model documentation |

@@ -45,7 +45,7 @@ up:
 	@echo "Services started:"
 	@echo "  - Prefect UI: http://localhost:4200"
 	@echo "  - Metabase:   http://localhost:3001"
-	@echo "  - dbt docs:   http://localhost:8080"
+	@echo "  - dbt docs:   http://localhost:8686"
 
 # Start only Prefect infrastructure (no Metabase)
 up-prefect:

@@ -80,7 +80,7 @@ cd analytics && make up && make deploy && make run-backfill
 | UI | 3000 | http://localhost:3000 |
 | Metabase | 3001 | http://localhost:3001 |
 | Prefect UI | 4200 | http://localhost:4200 |
-| dbt Docs | 8080 | http://localhost:8080 |
+| dbt Docs | 8686 | http://localhost:8686 |
 
 ## Installation
 
