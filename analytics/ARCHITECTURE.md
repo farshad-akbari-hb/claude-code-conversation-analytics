@@ -1,6 +1,6 @@
 # Claude Analytics Platform - Architecture Document
 
-> **Version**: 1.0.0
+> **Version**: 2.1.0
 > **Last Updated**: January 2026
 > **Status**: Production
 
@@ -549,7 +549,42 @@ flowchart TB
 | metabase-db | postgres:15-alpine | 5432 (internal) | pg_isready | - |
 | dbt-docs | Custom (Dockerfile) | 8080 | - | - |
 
-### 5.3 Container Build Architecture
+### 5.3 DuckDB Concurrency & Metabase Coordination
+
+DuckDB only allows one writer at a time. Since Metabase holds a write lock on the database file (even when reading), the pipeline automatically coordinates with Metabase to prevent lock conflicts.
+
+```mermaid
+sequenceDiagram
+    participant P as Pipeline
+    participant D as Docker
+    participant M as Metabase
+    participant DB as DuckDB
+
+    Note over P,DB: Before DuckDB Operations
+    P->>D: docker stop metabase dbt-docs
+    D->>M: Stop containers
+    M-->>DB: Release lock
+
+    Note over P,DB: DuckDB Operations
+    P->>DB: Load from Iceberg
+    P->>DB: dbt build (transforms)
+
+    Note over P,DB: After DuckDB Operations
+    P->>D: docker start metabase dbt-docs
+    D->>M: Start containers
+    M->>DB: Reconnect (read-only)
+```
+
+**Implementation Details:**
+
+| Component | Configuration |
+|-----------|---------------|
+| Docker socket mount | `/var/run/docker.sock:/var/run/docker.sock` |
+| Worker user | `root` (required for Docker socket access) |
+| Docker CLI | Installed in worker image |
+| Coordination | Automatic (default) via `coordinate_metabase=True` |
+
+### 5.4 Container Build Architecture
 
 ```mermaid
 flowchart TB
@@ -731,6 +766,12 @@ flowchart TB
         P4[skip_load: bool]
         P5[skip_transform: bool]
         P6[dbt_select: str]
+        P7[coordinate_metabase: bool]
+    end
+
+    subgraph MetabaseCoord["Metabase Coordination"]
+        PAUSE[pause_metabase]
+        RESUME[resume_metabase]
     end
 
     SCHED -->|Calls| MAIN
@@ -740,12 +781,15 @@ flowchart TB
     MAIN --> P4
     MAIN --> P5
     MAIN --> P6
+    MAIN --> P7
 
     MAIN -->|1| EXT
-    EXT -->|2| LOAD
-    LOAD -->|3| TRANS
+    EXT -->|2| PAUSE
+    PAUSE -->|3| LOAD
+    LOAD -->|4| TRANS
+    TRANS -->|5| RESUME
 
-    EXT -->|skip_extract| LOAD
+    EXT -->|skip_extract| PAUSE
     LOAD -->|skip_load| TRANS
 ```
 
@@ -968,14 +1012,27 @@ flowchart TB
 │ make deploy          Build, restart worker, deploy flows    │
 │ make status          List Prefect deployments               │
 ├─────────────────────────────────────────────────────────────┤
-│                   PIPELINE EXECUTION                         │
+│            PIPELINE EXECUTION (Auto Metabase Handling)       │
 ├─────────────────────────────────────────────────────────────┤
 │ make run-adhoc       Run incremental pipeline               │
 │ make run-backfill    Run full historical backfill           │
 │ make run-daily       Run daily full refresh                 │
 │ make pipeline        Run locally (without Prefect)          │
+├─────────────────────────────────────────────────────────────┤
+│            SAFE COMMANDS (Manual Metabase Control)           │
+├─────────────────────────────────────────────────────────────┤
+│ make safe-backfill   Pause Metabase → Backfill → Resume     │
+│ make safe-adhoc      Pause Metabase → Ad-hoc → Resume       │
+│ make safe-pipeline   Pause Metabase → Pipeline → Resume     │
+├─────────────────────────────────────────────────────────────┤
+│                  METABASE CONTROL                            │
+├─────────────────────────────────────────────────────────────┤
+│ make pause-metabase  Stop Metabase (release DuckDB lock)    │
+│ make resume-metabase Start Metabase after pipeline          │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+> **Note**: The pipeline now automatically coordinates with Metabase via `coordinate_metabase=True` (default). The safe-* and pause/resume commands are available for manual control if needed.
 
 ### 11.2 CLI Commands
 
@@ -1141,4 +1198,4 @@ claude-analytics validate --bronze --silver  # Check data quality
 
 ---
 
-*Document generated for Claude Analytics Platform v1.0.0*
+*Document generated for Claude Analytics Platform v2.1.0*
