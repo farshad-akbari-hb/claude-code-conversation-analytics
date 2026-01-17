@@ -18,13 +18,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Copy package files for installation
+COPY pyproject.toml .
+COPY analytics/ ./analytics/
 
-# Install dbt dependencies
-RUN pip install --no-cache-dir dbt-core dbt-duckdb
+# Install Python dependencies from pyproject.toml
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -e .
 
 # =============================================================================
 # Stage 2: Runtime - Final production image

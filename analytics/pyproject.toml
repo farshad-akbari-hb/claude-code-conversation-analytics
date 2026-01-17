@@ -29,30 +29,33 @@ dependencies = [
     "pyarrow>=15.0",
     "pandas>=2.0",
 
-    # DuckDB OLAP
+    # Apache Iceberg (with DuckDB and PyArrow integration)
+    "pyiceberg[duckdb,pyarrow]>=0.8.0",
+
+    # DuckDB OLAP database
     "duckdb>=0.10",
 
-    # Orchestration
-    "prefect>=2.14",
+    # Orchestration - pinned to match Prefect server version
+    "prefect==2.19.9",
 
     # Data quality
     "great-expectations>=0.18",
 
-    # Configuration
+    # Configuration - upper bounds for compatibility
     "python-dotenv>=1.0",
-    "pydantic>=2.0",
-    "pydantic-settings>=2.0",
+    "pydantic>=2.0,<2.10",
+    "pydantic-settings>=2.0,<2.7",
 
     # CLI
     "typer>=0.9",
     "rich>=13.0",
-]
 
-[project.optional-dependencies]
-dbt = [
+    # dbt for transformations
     "dbt-core>=1.7",
     "dbt-duckdb>=1.7",
 ]
+
+[project.optional-dependencies]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
@@ -61,9 +64,6 @@ dev = [
     "ruff>=0.1",
     "mypy>=1.0",
     "pre-commit>=3.0",
-]
-all = [
-    "claude-analytics[dbt,dev]",
 ]
 
 [project.scripts]
