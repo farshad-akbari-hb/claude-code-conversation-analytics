@@ -137,6 +137,11 @@ services:
     volumes:
       - analytics-data:/data
       - duckdb-data:/duckdb
+      # Mount Docker socket to allow controlling Metabase container
+      # This enables the pipeline to pause/resume Metabase to prevent DuckDB lock conflicts
+      - /var/run/docker.sock:/var/run/docker.sock
+    # Run as root to access Docker socket (required for Metabase coordination)
+    user: root
     depends_on:
       prefect-server:
         condition: service_healthy
