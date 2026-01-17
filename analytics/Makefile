@@ -3,7 +3,8 @@
 
 .PHONY: up up-prefect down rebuild fresh deploy worker-local logs status \
         run-adhoc run-backfill run-daily pipeline shell help configure-metabase \
-        pause-metabase resume-metabase safe-pipeline safe-backfill safe-adhoc
+        pause-metabase resume-metabase safe-pipeline safe-backfill safe-adhoc \
+        export-db import-db
 
 # Default target
 help:
@@ -36,6 +37,10 @@ help:
 	@echo "Metabase Control:"
 	@echo "  make pause-metabase  - Stop Metabase to release DuckDB lock"
 	@echo "  make resume-metabase - Restart Metabase after pipeline"
+	@echo ""
+	@echo "Data Management:"
+	@echo "  make export-db       - Export DuckDB to ./analytics.db"
+	@echo "  make import-db       - Import DuckDB from ./analytics.db"
 	@echo ""
 	@echo "Development:"
 	@echo "  make worker-local - Start local Prefect worker"
@@ -226,6 +231,29 @@ worker-local:
 	@echo "Starting local worker..."
 	@echo "Make sure PREFECT_API_URL is set to http://localhost:4200/api"
 	PREFECT_API_URL=http://localhost:4200/api prefect worker start --pool analytics-pool
+
+# =============================================================================
+# Data Management
+# =============================================================================
+
+# Export DuckDB database to local filesystem (for inspection/backup)
+export-db:
+	@echo "Exporting DuckDB database to ./analytics.db..."
+	@docker cp analytics-worker:/duckdb/analytics.db ./analytics.db 2>/dev/null || \
+		docker cp prefect-worker:/duckdb/analytics.db ./analytics.db
+	@echo "Exported to ./analytics.db ($(shell ls -lh ./analytics.db 2>/dev/null | awk '{print $$5}'))"
+	@echo ""
+	@echo "You can now open with: duckdb ./analytics.db"
+
+# Import DuckDB database from local filesystem (restore from backup)
+import-db:
+	@echo "Importing DuckDB database from ./analytics.db..."
+	@test -f ./analytics.db || (echo "Error: ./analytics.db not found" && exit 1)
+	@$(MAKE) pause-metabase
+	@docker cp ./analytics.db analytics-worker:/duckdb/analytics.db 2>/dev/null || \
+		docker cp ./analytics.db prefect-worker:/duckdb/analytics.db
+	@$(MAKE) resume-metabase
+	@echo "Imported successfully"
 
 # =============================================================================
 # Configuration
