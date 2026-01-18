@@ -26,6 +26,8 @@ enriched_tools as (
         tc.partition_date,
         tc.entry_type,
         tc.tool_name,
+        tc.tool_id,
+        tc.tool_use_id,
         tc.is_invocation,
         tc.is_result,
         tc.tool_content,

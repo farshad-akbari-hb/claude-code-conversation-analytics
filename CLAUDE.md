@@ -30,6 +30,13 @@ make run-backfill    # Initial full backfill
 make run-adhoc       # Incremental run
 make logs            # View worker logs
 
+# Analytics CLI
+python -m analytics.cli extract --full-backfill   # Extract to Iceberg table
+python -m analytics.cli load                       # Load from Iceberg to DuckDB
+python -m analytics.cli pipeline                   # Full pipeline
+python -m analytics.cli iceberg info               # Show Iceberg table info
+python -m analytics.cli iceberg snapshots          # List table snapshots
+
 # Production (PM2)
 cd sync-service && pm2 start ecosystem.config.js
 pm2 logs claude-mongo-sync
@@ -73,6 +80,11 @@ This project has three main components:
 └──────┘  └────┬─────┘             └─────────┘
                │
                ▼
+     ┌─────────────────┐
+     │ Apache Iceberg  │
+     └────────┬────────┘
+               │
+               ▼
           ┌─────────┐
           │ DuckDB  │ ← dbt (Bronze→Silver→Gold)
           └────┬────┘
@@ -98,9 +110,10 @@ This project has three main components:
 
 | Path | Responsibility |
 |------|----------------|
-| `analytics/analytics/extractor.py` | MongoDB extraction to Parquet |
-| `analytics/analytics/loader.py` | DuckDB loading |
+| `analytics/analytics/extractor.py` | MongoDB extraction to Apache Iceberg tables |
+| `analytics/analytics/loader.py` | DuckDB loading from Iceberg |
 | `analytics/analytics/cli.py` | CLI entry point |
+| `analytics/analytics/config.py` | Configuration settings |
 | `analytics/analytics/flows/` | Prefect orchestration flows |
 | `analytics/dbt/models/staging/` | Bronze layer (cleaned source) |
 | `analytics/dbt/models/intermediate/` | Silver layer (enriched) |
@@ -113,6 +126,8 @@ This project has three main components:
 - **Processing lock**: `Watcher.processing` Set prevents concurrent processing of same file
 - **ordered: false**: MongoDB insertMany uses unordered for partial success on duplicates
 - **Medallion architecture**: dbt models follow Bronze→Silver→Gold pattern for analytics
+- **Apache Iceberg**: ACID transactions, schema evolution, time travel support
+- **SQLite Iceberg catalog**: Local development catalog, upgradable to REST catalog for production
 
 ## Configuration
 
@@ -142,6 +157,11 @@ Copy `.env.analytics.example` to `.env.analytics` in the analytics directory.
 |----------|---------|---------|
 | `DUCKDB_PATH` | `/duckdb/analytics.db` | DuckDB file path |
 | `DBT_TARGET` | `dev` | dbt profile target |
+| `ICEBERG_WAREHOUSE_PATH` | `/data/iceberg` | Iceberg warehouse directory |
+| `ICEBERG_CATALOG_NAME` | `default` | Iceberg catalog name |
+| `ICEBERG_CATALOG_TYPE` | `sql` | Catalog type (sql for SQLite, rest for REST) |
+| `ICEBERG_NAMESPACE` | `analytics` | Iceberg namespace |
+| `ICEBERG_TABLE_NAME` | `conversations` | Iceberg table name |
 
 ## Testing
 

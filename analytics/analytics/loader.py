@@ -1,8 +1,8 @@
 """
 DuckDB Loader for Claude Analytics Platform.
 
-Loads Parquet files into DuckDB database with support for both
-full refresh and incremental upsert operations.
+Loads data from Apache Iceberg tables into DuckDB database
+with full refresh and incremental upsert operations.
 """
 
 import logging
@@ -47,7 +47,12 @@ CREATE TABLE IF NOT EXISTS raw.conversations (
     source_file VARCHAR,
 
     -- Partitioning (derived)
-    date DATE
+    date DATE,
+
+    -- Tool-specific fields (for tool_use and tool_result records)
+    tool_name VARCHAR,
+    tool_id VARCHAR,
+    tool_use_id VARCHAR
 );
 """
 
@@ -57,25 +62,8 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_conversations_date ON raw.conversations(date);",
     "CREATE INDEX IF NOT EXISTS idx_conversations_type ON raw.conversations(type);",
     "CREATE INDEX IF NOT EXISTS idx_conversations_timestamp ON raw.conversations(timestamp);",
+    "CREATE INDEX IF NOT EXISTS idx_conversations_tool_name ON raw.conversations(tool_name);",
 ]
-
-# SQL for loading and upserting data
-LOAD_FROM_PARQUET = """
-INSERT INTO raw.conversations
-SELECT * FROM read_parquet('{parquet_path}', hive_partitioning=true)
-ON CONFLICT (_id) DO UPDATE SET
-    type = EXCLUDED.type,
-    session_id = EXCLUDED.session_id,
-    project_id = EXCLUDED.project_id,
-    timestamp = EXCLUDED.timestamp,
-    ingested_at = EXCLUDED.ingested_at,
-    extracted_at = EXCLUDED.extracted_at,
-    message_role = EXCLUDED.message_role,
-    message_content = EXCLUDED.message_content,
-    message_raw = EXCLUDED.message_raw,
-    source_file = EXCLUDED.source_file,
-    date = EXCLUDED.date;
-"""
 
 COUNT_ROWS = "SELECT COUNT(*) FROM raw.conversations;"
 
@@ -91,10 +79,10 @@ WHERE table_schema = 'raw' AND table_name = 'conversations';
 
 class DuckDBLoader:
     """
-    Loads Parquet files into DuckDB database.
+    Loads Iceberg tables into DuckDB database.
 
     Supports both full refresh and incremental upsert operations.
-    Uses DuckDB's native Parquet reader with Hive partitioning support.
+    Uses DuckDB's native Iceberg extension for reading Iceberg tables.
     """
 
     def __init__(self, settings: Settings | None = None):
@@ -149,7 +137,13 @@ class DuckDBLoader:
         # All retries exhausted
         logger.error(
             f"Failed to connect to DuckDB after {LOCK_RETRY_MAX_ATTEMPTS} attempts. "
-            "Ensure Metabase is configured with read_only=true for the DuckDB connection."
+            "DuckDB only allows one writer at a time. Metabase may be holding the lock."
+        )
+        logger.error(
+            "Solutions:\n"
+            "  1. Run 'make safe-backfill' or 'make safe-adhoc' to auto-pause Metabase\n"
+            "  2. Manually run 'make pause-metabase' before pipeline, 'make resume-metabase' after\n"
+            "  3. Configure Metabase DuckDB connection with read_only=true (may not work with all drivers)"
         )
         raise last_error  # type: ignore
 
@@ -193,44 +187,81 @@ class DuckDBLoader:
 
         logger.info("Database schema initialization complete")
 
-    def load_from_parquet(
+    def _install_iceberg_extension(self) -> None:
+        """Install and load the DuckDB Iceberg extension."""
+        try:
+            self.conn.execute("INSTALL iceberg;")
+            self.conn.execute("LOAD iceberg;")
+            logger.info("Iceberg extension installed and loaded")
+        except duckdb.CatalogException as e:
+            if "already loaded" in str(e).lower():
+                logger.debug("Iceberg extension already loaded")
+            else:
+                raise
+
+    def load(
         self,
-        parquet_path: Path | str,
         full_refresh: bool = False,
     ) -> int:
         """
-        Load Parquet files into DuckDB.
+        Load data from the configured Iceberg table into DuckDB.
+
+        Uses the Iceberg settings from configuration.
 
         Args:
-            parquet_path: Path to Parquet file or directory with partitions
             full_refresh: If True, truncate table before loading
 
         Returns:
             Number of rows loaded
         """
-        parquet_path = Path(parquet_path)
+        iceberg_path = (
+            self.settings.iceberg.warehouse_path
+            / self.settings.iceberg.namespace
+            / self.settings.iceberg.table_name
+        )
+        return self.load_from_iceberg(iceberg_path, full_refresh=full_refresh)
 
-        if not parquet_path.exists():
-            raise FileNotFoundError(f"Parquet path not found: {parquet_path}")
+    def load_from_iceberg(
+        self,
+        iceberg_table_path: Path | str,
+        full_refresh: bool = False,
+    ) -> int:
+        """
+        Load data from an Iceberg table into DuckDB.
+
+        Uses DuckDB's native Iceberg extension to read from Iceberg tables
+        with support for time travel and snapshot isolation.
+
+        Args:
+            iceberg_table_path: Path to the Iceberg table metadata
+            full_refresh: If True, truncate table before loading
+
+        Returns:
+            Number of rows loaded
+        """
+        iceberg_table_path = Path(iceberg_table_path)
+
+        if not iceberg_table_path.exists():
+            raise FileNotFoundError(f"Iceberg table path not found: {iceberg_table_path}")
 
         # Ensure schema exists
         self.create_database()
 
-        # Build the glob pattern for Parquet files
-        if parquet_path.is_dir():
-            # Directory with partitions: data/raw/**/*.parquet
-            glob_pattern = str(parquet_path / "**" / "*.parquet")
-        else:
-            # Single file
-            glob_pattern = str(parquet_path)
+        # Install iceberg extension
+        self._install_iceberg_extension()
 
-        # Check if any files match
-        matching_files = list(parquet_path.glob("**/*.parquet")) if parquet_path.is_dir() else [parquet_path]
-        if not matching_files:
-            logger.warning(f"No Parquet files found in {parquet_path}")
-            return 0
+        # Find the metadata location
+        metadata_dir = iceberg_table_path / "metadata"
+        if not metadata_dir.exists():
+            raise FileNotFoundError(f"Iceberg metadata not found at: {metadata_dir}")
 
-        logger.info(f"Found {len(matching_files)} Parquet file(s) to load")
+        # Find the latest metadata file
+        metadata_files = sorted(metadata_dir.glob("*.metadata.json"), reverse=True)
+        if not metadata_files:
+            raise FileNotFoundError(f"No metadata files found in: {metadata_dir}")
+
+        latest_metadata = metadata_files[0]
+        logger.info(f"Using Iceberg metadata: {latest_metadata}")
 
         # Get count before
         count_before = self._get_row_count()
@@ -239,31 +270,60 @@ class DuckDBLoader:
             logger.info("Full refresh: truncating existing data")
             self.conn.execute("DELETE FROM raw.conversations;")
 
-        # Load data using upsert (ON CONFLICT)
-        load_sql = LOAD_FROM_PARQUET.format(parquet_path=glob_pattern)
+        # Load data from Iceberg using the iceberg_scan function
+        load_sql = f"""
+        INSERT INTO raw.conversations
+        SELECT
+            _id,
+            type,
+            session_id,
+            project_id,
+            timestamp,
+            ingested_at,
+            extracted_at,
+            message_role,
+            message_content,
+            message_raw,
+            source_file,
+            date,
+            tool_name,
+            tool_id,
+            tool_use_id
+        FROM iceberg_scan('{latest_metadata}')
+        ON CONFLICT (_id) DO UPDATE SET
+            type = EXCLUDED.type,
+            session_id = EXCLUDED.session_id,
+            project_id = EXCLUDED.project_id,
+            timestamp = EXCLUDED.timestamp,
+            ingested_at = EXCLUDED.ingested_at,
+            extracted_at = EXCLUDED.extracted_at,
+            message_role = EXCLUDED.message_role,
+            message_content = EXCLUDED.message_content,
+            message_raw = EXCLUDED.message_raw,
+            source_file = EXCLUDED.source_file,
+            date = EXCLUDED.date,
+            tool_name = EXCLUDED.tool_name,
+            tool_id = EXCLUDED.tool_id,
+            tool_use_id = EXCLUDED.tool_use_id;
+        """
+
         self.conn.execute(load_sql)
 
         # Get count after
         count_after = self._get_row_count()
         rows_loaded = count_after - count_before if not full_refresh else count_after
 
-        logger.info(f"Loaded {rows_loaded} rows (total: {count_after})")
+        logger.info(f"Loaded {rows_loaded} rows from Iceberg (total: {count_after})")
         return rows_loaded
 
-    def upsert_incremental(self, parquet_path: Path | str) -> int:
+    def upsert(self) -> int:
         """
-        Upsert Parquet files into DuckDB (insert or update on conflict).
-
-        This is the same as load_from_parquet with full_refresh=False,
-        but with explicit naming for clarity.
-
-        Args:
-            parquet_path: Path to Parquet file or directory
+        Upsert data from configured Iceberg table into DuckDB.
 
         Returns:
             Number of rows affected
         """
-        return self.load_from_parquet(parquet_path, full_refresh=False)
+        return self.load(full_refresh=False)
 
     def _get_row_count(self) -> int:
         """Get current row count in conversations table."""
@@ -367,13 +427,7 @@ def main() -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    parser = argparse.ArgumentParser(description="Load Parquet files into DuckDB")
-    parser.add_argument(
-        "parquet_path",
-        type=Path,
-        nargs="?",
-        help="Path to Parquet file or directory",
-    )
+    parser = argparse.ArgumentParser(description="Load Iceberg tables into DuckDB")
     parser.add_argument(
         "--full-refresh",
         action="store_true",
@@ -407,14 +461,9 @@ def main() -> None:
                 print("Type distribution:")
                 for t in stats["type_distribution"]:
                     print(f"  {t['type']}: {t['count']}")
-        elif args.parquet_path:
-            rows = loader.load_from_parquet(
-                args.parquet_path,
-                full_refresh=args.full_refresh,
-            )
-            print(f"Loaded {rows} rows")
         else:
-            parser.print_help()
+            rows = loader.load(full_refresh=args.full_refresh)
+            print(f"Loaded {rows} rows from Iceberg")
     finally:
         loader.disconnect()
 

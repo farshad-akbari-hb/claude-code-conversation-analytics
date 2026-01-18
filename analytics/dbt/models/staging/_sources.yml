@@ -5,7 +5,7 @@ version: 2
 
 sources:
   - name: raw
-    description: "Raw data loaded from MongoDB via Parquet extraction"
+    description: "Raw data loaded from MongoDB via Iceberg extraction"
     # DuckDB file-based databases always use 'main' as the database name
     schema: raw
 
@@ -52,7 +52,7 @@ sources:
             description: "When the entry was synced to MongoDB"
 
           - name: extracted_at
-            description: "When the entry was extracted to Parquet/DuckDB"
+            description: "When the entry was extracted to Iceberg/DuckDB"
             tests:
               - not_null
 
@@ -72,3 +72,12 @@ sources:
             description: "Date partition key (derived from timestamp)"
             tests:
               - not_null
+
+          - name: tool_name
+            description: "Name of the tool (for tool_use records): Read, Write, Edit, Bash, etc."
+
+          - name: tool_id
+            description: "Unique ID of the tool invocation (for tool_use records)"
+
+          - name: tool_use_id
+            description: "Reference to the tool_use ID (for tool_result records, to pair with invocation)"

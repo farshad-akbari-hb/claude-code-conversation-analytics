@@ -34,6 +34,11 @@ cleaned as (
         message_content,
         message_raw,
 
+        -- Tool-specific fields (populated for tool_use and tool_result types)
+        tool_name,
+        tool_id,
+        tool_use_id,
+
         -- Source tracking
         source_file,
         date as partition_date,

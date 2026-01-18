@@ -1,6 +1,6 @@
 # Claude Analytics Platform - Architecture Document
 
-> **Version**: 1.0.0
+> **Version**: 2.1.0
 > **Last Updated**: January 2026
 > **Status**: Production
 
@@ -30,7 +30,7 @@ The **Claude Analytics Platform** is an enterprise-grade ELT (Extract, Load, Tra
 | Capability | Technology | Purpose |
 |------------|------------|---------|
 | **Extraction** | Python + PyMongo | Extract conversation logs from MongoDB |
-| **Storage** | Parquet + DuckDB | Columnar storage for OLAP workloads |
+| **Storage** | Apache Iceberg + DuckDB | Columnar storage for OLAP workloads |
 | **Transformation** | dbt | Medallion architecture (Bronze → Silver → Gold) |
 | **Orchestration** | Prefect 2.x | Scheduled and ad-hoc pipeline execution |
 | **Data Quality** | Great Expectations | Validation at multiple pipeline stages |
@@ -47,13 +47,13 @@ The **Claude Analytics Platform** is an enterprise-grade ELT (Extract, Load, Tra
 │         dbt-core + dbt-duckdb (Medallion Architecture)      │
 ├─────────────────────────────────────────────────────────────┤
 │                      STORAGE LAYER                           │
-│              DuckDB (OLAP) + Parquet Files                  │
+│              DuckDB (OLAP) + Apache Iceberg                 │
 ├─────────────────────────────────────────────────────────────┤
 │                   ORCHESTRATION LAYER                        │
 │              Prefect 2.19 + PostgreSQL Backend              │
 ├─────────────────────────────────────────────────────────────┤
 │                    EXTRACTION LAYER                          │
-│           Python 3.11 + PyMongo + PyArrow                   │
+│        Python 3.11 + PyMongo + PyArrow + PyIceberg          │
 ├─────────────────────────────────────────────────────────────┤
 │                      SOURCE LAYER                            │
 │               MongoDB (Conversation Logs)                    │
@@ -78,7 +78,7 @@ flowchart TB
     end
 
     subgraph Storage["Landing Zone"]
-        PARQUET[("Parquet Files<br/>Date Partitioned")]
+        ICEBERG[("Iceberg Tables<br/>Date Partitioned")]
     end
 
     subgraph Loading["Loading Layer"]
@@ -109,8 +109,8 @@ flowchart TB
 
     MONGO -->|Incremental Extract| EXT
     EXT <-->|Track Progress| HWM
-    EXT -->|Write| PARQUET
-    PARQUET -->|Read| LOADER
+    EXT -->|Write| ICEBERG
+    ICEBERG -->|Read| LOADER
     LOADER -->|Upsert| DUCK
     DUCK -->|Source| DBT
     DBT -->|Transform| DUCK
@@ -132,7 +132,7 @@ sequenceDiagram
     participant W as Worker
     participant E as MongoExtractor
     participant M as MongoDB
-    participant F as Parquet Files
+    participant F as Iceberg Tables
     participant L as DuckDBLoader
     participant D as DuckDB
     participant T as dbt
@@ -146,7 +146,7 @@ sequenceDiagram
         E->>E: Load high water mark
         E->>M: Query (ingestedAt > last_run)
         M-->>E: Documents (batched)
-        E->>F: Write Parquet (date partitioned)
+        E->>F: Write Iceberg (date partitioned)
         E->>E: Update high water mark
         E-->>W: Return stats
     end
@@ -154,7 +154,7 @@ sequenceDiagram
     rect rgb(200, 200, 230)
         Note over W,D: Loading Phase
         W->>L: load_task(extraction_stats)
-        L->>F: Read Parquet (glob)
+        L->>F: Read Iceberg (scan)
         L->>D: Upsert raw.conversations
         L-->>W: Return stats
     end
@@ -258,7 +258,7 @@ flowchart TB
     end
 
     subgraph Landing
-        PQ[("Parquet<br/>/data/raw/date=*/")]
+        ICE[("Iceberg<br/>/data/iceberg/analytics/")]
     end
 
     subgraph Raw
@@ -292,8 +292,8 @@ flowchart TB
         AHA[agg_hourly_activity]
     end
 
-    MONGO --> PQ
-    PQ --> RC
+    MONGO --> ICE
+    ICE --> RC
     RC --> SC
     RC --> SM
     RC --> ST
@@ -320,8 +320,8 @@ flowchart TB
 analytics/
 ├── __init__.py                 # Package initialization
 ├── config.py                   # Pydantic settings management
-├── extractor.py               # MongoDB → Parquet extraction
-├── loader.py                  # Parquet → DuckDB loading
+├── extractor.py               # MongoDB → Iceberg extraction
+├── loader.py                  # Iceberg → DuckDB loading
 ├── quality.py                 # Great Expectations integration
 ├── cli.py                     # Typer CLI interface
 └── flows/
@@ -369,7 +369,7 @@ classDiagram
         +connect()
         +disconnect()
         +create_database()
-        +load_from_parquet(pattern) int
+        +load_from_iceberg() int
         +upsert_incremental(pattern) int
         +get_table_stats() dict
     }
@@ -413,7 +413,7 @@ flowchart TB
         BATCH[Batch processing<br/>10K docs/batch]
         TRANSFORM[Transform documents<br/>Flatten messages]
         PARTITION[Date partitioning<br/>Derive from timestamp]
-        WRITE[Write Parquet<br/>Snappy compression]
+        WRITE[Write Iceberg<br/>Date partitioned]
         HWM_UPDATE[Update high<br/>water mark]
     end
 
@@ -453,7 +453,7 @@ flowchart TB
         SCHEMA[Create schema<br/>IF NOT EXISTS raw]
         TABLE[Create table<br/>PRIMARY KEY _id]
         INDEX[Create indexes<br/>5 covering indexes]
-        GLOB[Glob Parquet files<br/>Hive partitioning]
+        SCAN[Scan Iceberg table<br/>Time travel support]
         UPSERT[Upsert data<br/>ON CONFLICT UPDATE]
         STATS[Generate statistics<br/>Row counts, dates]
     end
@@ -474,12 +474,12 @@ flowchart TB
     INDEX --> I3
     INDEX --> I4
     INDEX --> I5
-    I1 --> GLOB
-    I2 --> GLOB
-    I3 --> GLOB
-    I4 --> GLOB
-    I5 --> GLOB
-    GLOB --> UPSERT
+    I1 --> SCAN
+    I2 --> SCAN
+    I3 --> SCAN
+    I4 --> SCAN
+    I5 --> SCAN
+    SCAN --> UPSERT
     UPSERT --> STATS
 ```
 
@@ -549,7 +549,42 @@ flowchart TB
 | metabase-db | postgres:15-alpine | 5432 (internal) | pg_isready | - |
 | dbt-docs | Custom (Dockerfile) | 8080 | - | - |
 
-### 5.3 Container Build Architecture
+### 5.3 DuckDB Concurrency & Metabase Coordination
+
+DuckDB only allows one writer at a time. Since Metabase holds a write lock on the database file (even when reading), the pipeline automatically coordinates with Metabase to prevent lock conflicts.
+
+```mermaid
+sequenceDiagram
+    participant P as Pipeline
+    participant D as Docker
+    participant M as Metabase
+    participant DB as DuckDB
+
+    Note over P,DB: Before DuckDB Operations
+    P->>D: docker stop metabase dbt-docs
+    D->>M: Stop containers
+    M-->>DB: Release lock
+
+    Note over P,DB: DuckDB Operations
+    P->>DB: Load from Iceberg
+    P->>DB: dbt build (transforms)
+
+    Note over P,DB: After DuckDB Operations
+    P->>D: docker start metabase dbt-docs
+    D->>M: Start containers
+    M->>DB: Reconnect (read-only)
+```
+
+**Implementation Details:**
+
+| Component | Configuration |
+|-----------|---------------|
+| Docker socket mount | `/var/run/docker.sock:/var/run/docker.sock` |
+| Worker user | `root` (required for Docker socket access) |
+| Docker CLI | Installed in worker image |
+| Coordination | Automatic (default) via `coordinate_metabase=True` |
+
+### 5.4 Container Build Architecture
 
 ```mermaid
 flowchart TB
@@ -731,6 +766,12 @@ flowchart TB
         P4[skip_load: bool]
         P5[skip_transform: bool]
         P6[dbt_select: str]
+        P7[coordinate_metabase: bool]
+    end
+
+    subgraph MetabaseCoord["Metabase Coordination"]
+        PAUSE[pause_metabase]
+        RESUME[resume_metabase]
     end
 
     SCHED -->|Calls| MAIN
@@ -740,12 +781,15 @@ flowchart TB
     MAIN --> P4
     MAIN --> P5
     MAIN --> P6
+    MAIN --> P7
 
     MAIN -->|1| EXT
-    EXT -->|2| LOAD
-    LOAD -->|3| TRANS
+    EXT -->|2| PAUSE
+    PAUSE -->|3| LOAD
+    LOAD -->|4| TRANS
+    TRANS -->|5| RESUME
 
-    EXT -->|skip_extract| LOAD
+    EXT -->|skip_extract| PAUSE
     LOAD -->|skip_load| TRANS
 ```
 
@@ -968,14 +1012,27 @@ flowchart TB
 │ make deploy          Build, restart worker, deploy flows    │
 │ make status          List Prefect deployments               │
 ├─────────────────────────────────────────────────────────────┤
-│                   PIPELINE EXECUTION                         │
+│            PIPELINE EXECUTION (Auto Metabase Handling)       │
 ├─────────────────────────────────────────────────────────────┤
 │ make run-adhoc       Run incremental pipeline               │
 │ make run-backfill    Run full historical backfill           │
 │ make run-daily       Run daily full refresh                 │
 │ make pipeline        Run locally (without Prefect)          │
+├─────────────────────────────────────────────────────────────┤
+│            SAFE COMMANDS (Manual Metabase Control)           │
+├─────────────────────────────────────────────────────────────┤
+│ make safe-backfill   Pause Metabase → Backfill → Resume     │
+│ make safe-adhoc      Pause Metabase → Ad-hoc → Resume       │
+│ make safe-pipeline   Pause Metabase → Pipeline → Resume     │
+├─────────────────────────────────────────────────────────────┤
+│                  METABASE CONTROL                            │
+├─────────────────────────────────────────────────────────────┤
+│ make pause-metabase  Stop Metabase (release DuckDB lock)    │
+│ make resume-metabase Start Metabase after pipeline          │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+> **Note**: The pipeline now automatically coordinates with Metabase via `coordinate_metabase=True` (default). The safe-* and pause/resume commands are available for manual control if needed.
 
 ### 11.2 CLI Commands
 
@@ -1141,4 +1198,4 @@ claude-analytics validate --bronze --silver  # Check data quality
 
 ---
 
-*Document generated for Claude Analytics Platform v1.0.0*
+*Document generated for Claude Analytics Platform v2.1.0*

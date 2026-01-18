@@ -8,7 +8,7 @@ A complete platform for syncing, browsing, and analyzing Claude Code conversatio
 |-----------|-------------|------------|
 | **Sync Service** | Real-time JSONL to MongoDB sync with SQLite buffering | TypeScript, chokidar, better-sqlite3 |
 | **UI** | Web interface for browsing conversation logs | Next.js, React, shadcn/ui, TanStack Query |
-| **Analytics** | ELT pipeline with dimensional modeling | Python, dbt, DuckDB, Prefect, Metabase |
+| **Analytics** | ELT pipeline with dimensional modeling | Python, dbt, DuckDB, Apache Iceberg, Prefect, Metabase |
 
 ## Architecture
 
@@ -38,6 +38,11 @@ A complete platform for syncing, browsing, and analyzing Claude Code conversatio
 │  UI  │  │ Analytics│             │ Service │
 │(3000)│  │ Extractor│             └─────────┘
 └──────┘  └────┬─────┘
+               │
+               ▼
+     ┌─────────────────┐
+     │ Apache Iceberg  │
+     └────────┬────────┘
                │
                ▼
           ┌─────────┐
@@ -182,6 +187,17 @@ make run-backfill    # Initial full backfill
 make run-adhoc       # Incremental run
 make run-daily       # Daily full refresh
 make pipeline        # Run directly (no Prefect)
+
+# CLI commands
+python -m analytics.cli extract --full-backfill   # Extract to Iceberg
+python -m analytics.cli load                       # Load from Iceberg to DuckDB
+python -m analytics.cli pipeline                   # Full pipeline
+
+# Iceberg table management
+python -m analytics.cli iceberg info       # Show table info
+python -m analytics.cli iceberg snapshots  # List snapshots (time travel)
+python -m analytics.cli iceberg create     # Create table
+python -m analytics.cli iceberg drop       # Drop table
 ```
 
 ## Monitoring
@@ -253,6 +269,10 @@ db.conversations.aggregate([
 |----------|---------|-------------|
 | `DUCKDB_PATH` | `/duckdb/analytics.db` | DuckDB file path |
 | `DBT_TARGET` | `dev` | dbt profile target |
+| `ICEBERG_WAREHOUSE_PATH` | `/data/iceberg` | Iceberg warehouse directory |
+| `ICEBERG_CATALOG_NAME` | `default` | Iceberg catalog name |
+| `ICEBERG_NAMESPACE` | `analytics` | Iceberg namespace |
+| `ICEBERG_TABLE_NAME` | `conversations` | Iceberg table name |
 
 ## Resilience
 

@@ -17,7 +17,7 @@ models:
           - not_null
 
       - name: entry_type
-        description: "Type of entry: user, assistant, tool_use, tool_result, system, summary, file-history-snapshot, queue-operation, or unknown"
+        description: "Type of entry: user, assistant, tool_use, tool_result, system, summary, file-history-snapshot, queue-operation, progress, or unknown"
         tests:
           - not_null
           - accepted_values:
@@ -31,6 +31,7 @@ models:
                   - summary
                   - file-history-snapshot
                   - queue-operation
+                  - progress
                   - unknown
 
       - name: session_id

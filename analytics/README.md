@@ -5,15 +5,15 @@ ELT analytics platform for Claude Code conversation logs. Extracts data from Mon
 ## Architecture
 
 ```
-MongoDB → Python Extractor → Parquet Files → DuckDB → dbt → Metabase
+MongoDB → Python Extractor → Apache Iceberg → DuckDB → dbt → Metabase
                                     ↑
                           Prefect Orchestrator (Hourly)
 ```
 
 ### Data Flow
 
-1. **Extract**: Python pulls conversations from MongoDB, writes to Parquet
-2. **Load**: Parquet files loaded into DuckDB
+1. **Extract**: Python pulls conversations from MongoDB, writes to Iceberg
+2. **Load**: Iceberg tables loaded into DuckDB
 3. **Transform**: dbt models build Bronze → Silver → Gold layers
 4. **Visualize**: Metabase dashboards query DuckDB
 
@@ -77,6 +77,7 @@ make help           # Show all available commands
 make up             # Start all services
 make up-prefect     # Start only Prefect (no Metabase)
 make down           # Stop all services
+make rebuild        # Rebuild Docker images
 make logs           # View worker logs
 make shell          # Open shell in worker container
 
@@ -89,6 +90,12 @@ make run-adhoc      # Trigger incremental run
 make run-backfill   # Trigger full backfill
 make run-daily      # Trigger daily refresh
 make pipeline       # Run directly (no Prefect)
+
+# DuckDB/Metabase Coordination
+make pause-metabase   # Pause Metabase (release DuckDB lock)
+make resume-metabase  # Resume Metabase
+make export-db        # Export DuckDB to local ./analytics.db
+make import-db        # Import local ./analytics.db to container
 
 # Development
 make worker-local   # Start local worker for debugging
@@ -103,8 +110,11 @@ make worker-local   # Start local worker for debugging
 python -m venv venv
 source venv/bin/activate  # or `venv\Scripts\activate` on Windows
 
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies (from pyproject.toml)
+pip install -e .
+
+# Or with dev dependencies (pytest, black, ruff, mypy)
+pip install -e ".[dev]"
 
 # Copy environment config
 cp .env.analytics.example .env.analytics
@@ -121,10 +131,10 @@ python -m analytics.cli --help
 # View configuration
 python -m analytics.cli config
 
-# Run extraction
+# Run extraction (MongoDB → Iceberg)
 python -m analytics.cli extract --full-backfill
 
-# Load into DuckDB
+# Load into DuckDB (Iceberg → DuckDB)
 python -m analytics.cli load --stats
 
 # Run dbt transformations
@@ -138,6 +148,11 @@ python -m analytics.cli validate
 
 # Deploy flows to Prefect server
 python -m analytics.cli deploy
+
+# Iceberg table management
+python -m analytics.cli iceberg info       # Show table info
+python -m analytics.cli iceberg snapshots  # List snapshots
+python -m analytics.cli iceberg schema     # Show current schema
 ```
 
 ### dbt Development
@@ -191,7 +206,7 @@ analytics/
 ├── docker-compose.analytics.yml
 ├── Makefile            # Convenience commands
 ├── prefect.yaml        # Deployment configuration
-└── requirements.txt
+└── pyproject.toml      # Dependencies & package config
 ```
 
 ## Data Model
@@ -234,6 +249,10 @@ Environment variables (see `.env.analytics.example`):
 | `MONGO_COLLECTION` | `conversations` | Collection name |
 | `DUCKDB_PATH` | `/duckdb/analytics.db` | DuckDB file path |
 | `DBT_TARGET` | `dev` | dbt profile target |
+| `ICEBERG_WAREHOUSE_PATH` | `/data/iceberg` | Iceberg warehouse directory |
+| `ICEBERG_CATALOG_TYPE` | `sql` | Catalog type (`sql` for SQLite) |
+| `ICEBERG_NAMESPACE` | `analytics` | Iceberg namespace |
+| `ICEBERG_TABLE_NAME` | `conversations` | Iceberg table name |
 
 ## Operations
 
@@ -313,6 +332,21 @@ make shell
 # Query DuckDB directly
 docker-compose -f docker-compose.analytics.yml exec analytics-worker \
   python -c "import duckdb; print(duckdb.connect('/duckdb/analytics.db').execute('SELECT COUNT(*) FROM raw.conversations').fetchone())"
+```
+
+**DuckDB Lock Errors:**
+
+If you see `Could not set lock on file` errors, Metabase is holding a write lock on DuckDB. The pipeline automatically pauses Metabase during writes, but for manual operations:
+
+```bash
+# Option 1: Use safe commands (auto pause/resume)
+make safe-backfill
+make safe-adhoc
+
+# Option 2: Manual pause/resume
+make pause-metabase
+# ... run your commands ...
+make resume-metabase
 ```
 
 ## Testing

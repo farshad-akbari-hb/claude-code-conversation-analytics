@@ -18,13 +18,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Copy package files for installation
+COPY pyproject.toml .
+COPY analytics/ ./analytics/
 
-# Install dbt dependencies
-RUN pip install --no-cache-dir dbt-core dbt-duckdb
+# Install Python dependencies from pyproject.toml
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -e .
 
 # =============================================================================
 # Stage 2: Runtime - Final production image
@@ -33,11 +33,19 @@ FROM python:3.11-slim as runtime
 
 WORKDIR /app
 
-# Install runtime dependencies only
+# Install runtime dependencies including Docker CLI for Metabase coordination
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     curl \
     git \
+    ca-certificates \
+    gnupg \
+    && install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+    && chmod a+r /etc/apt/keyrings/docker.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy virtual environment from builder

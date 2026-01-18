@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document specifies an ELT (Extract-Load-Transform) analytics platform for Claude Code conversation logs. The platform extracts data from MongoDB, loads it into DuckDB via Parquet intermediate files, transforms it using dbt, and visualizes insights through Metabase.
+This document specifies an ELT (Extract-Load-Transform) analytics platform for Claude Code conversation logs. The platform extracts data from MongoDB, loads it into DuckDB via Apache Iceberg tables, transforms it using dbt, and visualizes insights through Metabase.
 
 ---
 
@@ -33,8 +33,8 @@ This document specifies an ELT (Extract-Load-Transform) analytics platform for C
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  ┌──────────────┐    ┌───────────────┐    ┌──────────────┐    ┌──────────┐ │
-│  │   MongoDB    │───▶│   Extractor   │───▶│   Parquet    │───▶│  DuckDB  │ │
-│  │ (Source DB)  │    │   (Python)    │    │   (Files)    │    │  (OLAP)  │ │
+│  │   MongoDB    │───▶│   Extractor   │───▶│   Iceberg    │───▶│  DuckDB  │ │
+│  │ (Source DB)  │    │   (Python)    │    │   (Tables)   │    │  (OLAP)  │ │
 │  └──────────────┘    └───────────────┘    └──────────────┘    └──────────┘ │
 │         │                                                           │       │
 │         │ CDC                                                       │       │
@@ -92,8 +92,8 @@ This document specifies an ELT (Extract-Load-Transform) analytics platform for C
 
 | Stage | Component | Trigger | Latency | Description |
 |-------|-----------|---------|---------|-------------|
-| Extract | Python Extractor | CDC + Batch | 1-5 min | Read from MongoDB, output Parquet |
-| Load | DuckDB Loader | After Extract | Immediate | Load Parquet into raw tables |
+| Extract | Python Extractor | CDC + Batch | 1-5 min | Read from MongoDB, output to Iceberg |
+| Load | DuckDB Loader | After Extract | Immediate | Load Iceberg into raw tables |
 | Transform | dbt | After Load | Minutes | Bronze → Silver → Gold |
 | Validate | Great Expectations | After Transform | Seconds | Data quality checks |
 | Visualize | Metabase | On Query | Real-time | Dashboard rendering |
@@ -104,36 +104,36 @@ This document specifies an ELT (Extract-Load-Transform) analytics platform for C
 
 ### 1. Extractor Service (Python)
 
-**Responsibility**: Extract data from MongoDB and write to Parquet files
+**Responsibility**: Extract data from MongoDB and write to Apache Iceberg tables
 
 ```python
 # Pseudo-structure
-class MongoExtractor:
+class IcebergExtractor:
     """
     Handles both CDC and batch extraction from MongoDB.
     """
 
-    def __init__(self, mongo_uri: str, output_dir: Path):
-        self.client = MongoClient(mongo_uri)
-        self.output_dir = output_dir
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        self.catalog_manager = IcebergCatalogManager(settings)
 
     def start_change_stream(self) -> None:
         """Listen to MongoDB change stream for real-time updates."""
         pass
 
-    def batch_extract(self, since: datetime) -> Path:
+    def extract(self, full_backfill: bool = False) -> int:
         """Full extraction with incremental filter."""
         pass
 
-    def write_parquet(self, documents: list, partition_key: str) -> Path:
-        """Write documents to partitioned Parquet files."""
+    def _write_to_iceberg(self, records: list, table: Table) -> int:
+        """Write records to Iceberg table."""
         pass
 ```
 
 **Key Features**:
 - MongoDB Change Stream listener for CDC (1-5 minute micro-batches)
 - Batch extraction with high-water mark tracking
-- Parquet output with date partitioning
+- Iceberg output with date partitioning and ACID transactions
 - Dead letter queue for failed extractions
 
 **Configuration**:
@@ -150,19 +150,22 @@ extractor:
 
 ### 2. DuckDB Loader
 
-**Responsibility**: Load Parquet files into DuckDB database
+**Responsibility**: Load Iceberg tables into DuckDB database
 
 ```sql
--- Example loader pattern
+-- Example loader pattern using DuckDB's Iceberg extension
+INSTALL iceberg;
+LOAD iceberg;
+
 CREATE OR REPLACE TABLE raw.conversations AS
-SELECT * FROM read_parquet('./data/raw/**/*.parquet', hive_partitioning=true);
+SELECT * FROM iceberg_scan('/data/iceberg/analytics/conversations');
 ```
 
 **Upsert Logic for Late-Arriving Data**:
 ```sql
 -- Merge pattern for handling duplicates
 MERGE INTO raw.conversations AS target
-USING (SELECT * FROM read_parquet('./data/incremental/*.parquet')) AS source
+USING (SELECT * FROM iceberg_scan('/data/iceberg/analytics/conversations')) AS source
 ON target._id = source._id
 WHEN MATCHED THEN UPDATE SET *
 WHEN NOT MATCHED THEN INSERT *;
@@ -223,8 +226,8 @@ def extract_from_mongo(since: datetime) -> Path:
     pass
 
 @task
-def load_to_duckdb(parquet_path: Path) -> None:
-    """Load Parquet files into DuckDB."""
+def load_to_duckdb() -> None:
+    """Load Iceberg tables into DuckDB."""
     pass
 
 @task
@@ -240,8 +243,8 @@ def run_great_expectations() -> bool:
 @flow(name="analytics-pipeline")
 def analytics_pipeline(full_refresh: bool = False):
     """Main analytics pipeline flow."""
-    parquet_path = extract_from_mongo(since=get_high_water_mark())
-    load_to_duckdb(parquet_path)
+    extract_to_iceberg(full_backfill=full_refresh)
+    load_to_duckdb()
     run_dbt_models()
     run_great_expectations()
 ```
@@ -778,9 +781,8 @@ claude-mongo-sync/
     │   ├── expectations/
     │   └── checkpoints/
     │
-    ├── data/                    # Parquet files (gitignored)
-    │   ├── raw/
-    │   ├── incremental/
+    ├── data/                    # Data files (gitignored)
+    │   ├── iceberg/             # Iceberg warehouse
     │   └── dead_letter/
     │
     └── docker-compose.yml
@@ -929,8 +931,8 @@ Failed records are written to a dead letter queue for investigation:
 data/
 └── dead_letter/
     ├── 2024-01-15/
-    │   ├── extraction_failures.parquet
-    │   └── validation_failures.parquet
+    │   ├── extraction_failures.json
+    │   └── validation_failures.json
     └── 2024-01-16/
         └── ...
 ```
@@ -1062,10 +1064,11 @@ MONGO_COLLECTION=entries
 # DuckDB Target
 DUCKDB_PATH=/duckdb/analytics.db
 
-# Parquet Storage
-DATA_DIR=/data
-RAW_DIR=/data/raw
-INCREMENTAL_DIR=/data/incremental
+# Iceberg Storage
+ICEBERG_WAREHOUSE_PATH=/data/iceberg
+ICEBERG_CATALOG_NAME=default
+ICEBERG_NAMESPACE=analytics
+ICEBERG_TABLE_NAME=conversations
 DEAD_LETTER_DIR=/data/dead_letter
 
 # Pipeline Settings
@@ -1158,8 +1161,8 @@ WebSearch,network,Search the web
 
 For initial deployment with full historical backfill:
 
-1. **Phase 1**: Extract all MongoDB documents to Parquet (may take hours for large datasets)
-2. **Phase 2**: Load Parquet into DuckDB raw tables
+1. **Phase 1**: Extract all MongoDB documents to Iceberg (may take hours for large datasets)
+2. **Phase 2**: Load Iceberg into DuckDB raw tables
 3. **Phase 3**: Run full dbt build (no incremental filters)
 4. **Phase 4**: Run Great Expectations validation
 5. **Phase 5**: Enable CDC listener for ongoing updates
@@ -1167,7 +1170,8 @@ For initial deployment with full historical backfill:
 
 ```bash
 # Backfill commands
-python -m analytics.extractor --full-backfill
+python -m analytics.cli extract --full-backfill
+python -m analytics.cli load
 dbt run --full-refresh
 great_expectations checkpoint run backfill_checkpoint
 ```
