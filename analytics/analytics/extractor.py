@@ -50,6 +50,10 @@ ICEBERG_SCHEMA = Schema(
     NestedField(field_id=11, name="source_file", field_type=StringType(), required=False),
     # Partitioning
     NestedField(field_id=12, name="date", field_type=DateType(), required=False),
+    # Tool-specific fields (for tool_use and tool_result records)
+    NestedField(field_id=13, name="tool_name", field_type=StringType(), required=False),
+    NestedField(field_id=14, name="tool_id", field_type=StringType(), required=False),
+    NestedField(field_id=15, name="tool_use_id", field_type=StringType(), required=False),
 )
 
 # PyArrow schema matching the Iceberg schema (for data conversion)
@@ -67,62 +71,184 @@ PYARROW_SCHEMA = pa.schema([
     pa.field("message_raw", pa.string(), nullable=True),
     pa.field("source_file", pa.string(), nullable=True),
     pa.field("date", pa.date32(), nullable=True),
+    # Tool-specific fields
+    pa.field("tool_name", pa.string(), nullable=True),
+    pa.field("tool_id", pa.string(), nullable=True),
+    pa.field("tool_use_id", pa.string(), nullable=True),
 ])
+
+
+class ContentBlock:
+    """Represents a parsed content block from a message."""
+
+    def __init__(
+        self,
+        block_type: str,
+        content: str | None = None,
+        tool_name: str | None = None,
+        tool_id: str | None = None,
+        tool_use_id: str | None = None,
+        raw_json: str | None = None,
+    ):
+        self.block_type = block_type
+        self.content = content
+        self.tool_name = tool_name
+        self.tool_id = tool_id
+        self.tool_use_id = tool_use_id
+        self.raw_json = raw_json
 
 
 class DocumentTransformer:
     """
-    Transforms MongoDB documents into a flat structure suitable for Iceberg.
+    Transforms MongoDB documents into flat records suitable for Iceberg.
 
-    Handles the flexible `message` field which can be:
-    - A simple string
-    - An object with `role` and `content` fields
-    - An array of content blocks
-    - None/missing
+    Handles the flexible `message` field and creates separate records for:
+    - Text content (type='assistant' or 'user')
+    - Tool invocations (type='tool_use')
+    - Tool results (type='tool_result')
     """
 
-    @staticmethod
-    def flatten_message(message: Any) -> tuple[str | None, str | None, str | None]:
+    def _parse_content_blocks(
+        self,
+        content: list[Any],
+        role: str | None,
+    ) -> list[ContentBlock]:
         """
-        Flatten the message field into role, content, and raw JSON.
+        Parse content blocks and create separate ContentBlock for each.
+
+        Args:
+            content: List of content blocks from the message
+            role: The message role (assistant/user)
 
         Returns:
-            Tuple of (role, content, raw_json)
+            List of ContentBlock objects
+        """
+        blocks: list[ContentBlock] = []
+        text_parts: list[str] = []
+
+        for block in content:
+            if isinstance(block, str):
+                text_parts.append(block)
+            elif isinstance(block, dict):
+                block_type = block.get("type")
+
+                if block_type == "text":
+                    text_parts.append(block.get("text", ""))
+
+                elif block_type == "tool_use":
+                    # Flush any accumulated text first
+                    if text_parts:
+                        blocks.append(ContentBlock(
+                            block_type=role or "assistant",
+                            content="\n".join(text_parts),
+                        ))
+                        text_parts = []
+
+                    # Create tool_use record
+                    tool_input = block.get("input", {})
+                    blocks.append(ContentBlock(
+                        block_type="tool_use",
+                        content=json.dumps(tool_input, default=str) if tool_input else None,
+                        tool_name=block.get("name"),
+                        tool_id=block.get("id"),
+                        raw_json=json.dumps(block, default=str),
+                    ))
+
+                elif block_type == "tool_result":
+                    # Flush any accumulated text first
+                    if text_parts:
+                        blocks.append(ContentBlock(
+                            block_type=role or "user",
+                            content="\n".join(text_parts),
+                        ))
+                        text_parts = []
+
+                    # Create tool_result record
+                    result_content = block.get("content", "")
+                    if isinstance(result_content, list):
+                        # Handle nested content blocks in tool_result
+                        result_parts = []
+                        for item in result_content:
+                            if isinstance(item, str):
+                                result_parts.append(item)
+                            elif isinstance(item, dict) and item.get("type") == "text":
+                                result_parts.append(item.get("text", ""))
+                        result_content = "\n".join(result_parts)
+
+                    blocks.append(ContentBlock(
+                        block_type="tool_result",
+                        content=result_content if isinstance(result_content, str) else str(result_content),
+                        tool_use_id=block.get("tool_use_id"),
+                        raw_json=json.dumps(block, default=str),
+                    ))
+
+        # Flush remaining text
+        if text_parts:
+            blocks.append(ContentBlock(
+                block_type=role or "unknown",
+                content="\n".join(text_parts),
+            ))
+
+        return blocks
+
+    def flatten_message(
+        self,
+        message: Any,
+        original_role: str | None = None,
+    ) -> list[ContentBlock]:
+        """
+        Flatten the message field into a list of ContentBlock records.
+
+        Creates separate records for text content, tool_use, and tool_result blocks.
+
+        Args:
+            message: The message field from the MongoDB document
+            original_role: The role to use for text blocks if not specified
+
+        Returns:
+            List of ContentBlock objects
         """
         if message is None:
-            return None, None, None
+            return []
 
         if isinstance(message, str):
-            return None, message, None
+            return [ContentBlock(
+                block_type=original_role or "unknown",
+                content=message,
+            )]
 
         if isinstance(message, dict):
-            role = message.get("role")
+            role = message.get("role") or original_role
             content = message.get("content")
 
-            # Handle content that might be a list of blocks
+            # Handle content that is a list of blocks
             if isinstance(content, list):
-                # Extract text from content blocks
-                text_parts = []
-                for block in content:
-                    if isinstance(block, dict):
-                        if block.get("type") == "text":
-                            text_parts.append(block.get("text", ""))
-                        elif block.get("type") == "tool_use":
-                            text_parts.append(f"[tool_use: {block.get('name', 'unknown')}]")
-                        elif block.get("type") == "tool_result":
-                            text_parts.append(f"[tool_result]")
-                    elif isinstance(block, str):
-                        text_parts.append(block)
-                content = "\n".join(text_parts) if text_parts else None
-            elif not isinstance(content, str):
-                content = str(content) if content is not None else None
+                return self._parse_content_blocks(content, role)
 
-            # Keep raw JSON for complex messages
-            raw_json = json.dumps(message, default=str) if message else None
-            return role, content, raw_json
+            # Handle simple string content
+            if isinstance(content, str):
+                return [ContentBlock(
+                    block_type=role or "unknown",
+                    content=content,
+                    raw_json=json.dumps(message, default=str),
+                )]
+
+            # Handle non-string content
+            if content is not None:
+                return [ContentBlock(
+                    block_type=role or "unknown",
+                    content=str(content),
+                    raw_json=json.dumps(message, default=str),
+                )]
+
+            # No content
+            return []
 
         # Fallback: serialize whatever we got
-        return None, None, json.dumps(message, default=str)
+        return [ContentBlock(
+            block_type="unknown",
+            raw_json=json.dumps(message, default=str),
+        )]
 
     @staticmethod
     def parse_timestamp(ts: Any) -> datetime | None:
@@ -144,27 +270,28 @@ class DocumentTransformer:
 
         return None
 
-    def transform(self, doc: dict[str, Any], extracted_at: datetime) -> dict[str, Any]:
+    def transform(
+        self,
+        doc: dict[str, Any],
+        extracted_at: datetime,
+    ) -> list[dict[str, Any]]:
         """
-        Transform a MongoDB document into a flat record for Iceberg.
+        Transform a MongoDB document into one or more flat records for Iceberg.
+
+        Creates separate records for each content block (text, tool_use, tool_result).
 
         Args:
             doc: MongoDB document
             extracted_at: Timestamp of extraction
 
         Returns:
-            Flattened dictionary ready for Iceberg
+            List of flattened dictionaries ready for Iceberg
         """
-        # Extract message fields
-        message_role, message_content, message_raw = self.flatten_message(
-            doc.get("message")
-        )
-
         # Parse timestamps
         timestamp = self.parse_timestamp(doc.get("timestamp"))
         ingested_at = self.parse_timestamp(doc.get("ingestedAt"))
 
-        # Derive date for partitioning (prefer timestamp, fallback to ingestedAt)
+        # Derive date for partitioning
         partition_date = None
         if timestamp:
             partition_date = timestamp.date()
@@ -173,20 +300,73 @@ class DocumentTransformer:
         else:
             partition_date = extracted_at.date()
 
-        return {
-            "_id": str(doc.get("_id", "")),
-            "type": doc.get("type"),
+        # Common fields for all records from this document
+        base_record = {
             "session_id": doc.get("sessionId"),
             "project_id": doc.get("projectId"),
             "timestamp": timestamp,
             "ingested_at": ingested_at,
             "extracted_at": extracted_at,
-            "message_role": message_role,
-            "message_content": message_content,
-            "message_raw": message_raw,
             "source_file": doc.get("sourceFile"),
             "date": partition_date,
         }
+
+        original_id = str(doc.get("_id", ""))
+        original_type = doc.get("type")
+        message = doc.get("message")
+
+        # Parse message into content blocks
+        content_blocks = self.flatten_message(message, original_type)
+
+        # If no content blocks, create a single record with original type
+        if not content_blocks:
+            return [{
+                **base_record,
+                "_id": original_id,
+                "type": original_type,
+                "message_role": None,
+                "message_content": None,
+                "message_raw": None,
+                "tool_name": None,
+                "tool_id": None,
+                "tool_use_id": None,
+            }]
+
+        # Create records for each content block
+        records: list[dict[str, Any]] = []
+        for idx, block in enumerate(content_blocks):
+            # Generate unique ID: original_id for first record, original_id_idx for derived
+            record_id = original_id if idx == 0 else f"{original_id}_{idx}"
+
+            # Determine the record type
+            # For tool_use and tool_result, use the block type
+            # For text content, use the original document type
+            record_type = block.block_type
+            if record_type in ("assistant", "user"):
+                record_type = original_type or record_type
+
+            # Determine message_role
+            message_role = None
+            if block.block_type == "tool_use":
+                message_role = "assistant"
+            elif block.block_type == "tool_result":
+                message_role = "user"
+            elif block.block_type in ("assistant", "user"):
+                message_role = block.block_type
+
+            records.append({
+                **base_record,
+                "_id": record_id,
+                "type": record_type,
+                "message_role": message_role,
+                "message_content": block.content,
+                "message_raw": block.raw_json,
+                "tool_name": block.tool_name,
+                "tool_id": block.tool_id,
+                "tool_use_id": block.tool_use_id,
+            })
+
+        return records
 
 
 class HighWaterMark:
@@ -468,23 +648,25 @@ class IcebergExtractor:
 
         extracted_at = datetime.now(timezone.utc)
         latest_ingested_at: datetime | None = None
-        total_count = 0
+        total_records = 0
+        doc_count = 0
         batch: list[dict[str, Any]] = []
 
         try:
             self.connect()
 
             for doc in self._fetch_documents(since=since):
-                # Transform document
-                record = self.transformer.transform(doc, extracted_at)
-                batch.append(record)
+                # Transform document into one or more records
+                records = self.transformer.transform(doc, extracted_at)
+                batch.extend(records)
+                total_records += len(records)
+                doc_count += 1
 
-                # Track latest ingested_at for high water mark
-                if record["ingested_at"]:
-                    if latest_ingested_at is None or record["ingested_at"] > latest_ingested_at:
-                        latest_ingested_at = record["ingested_at"]
-
-                total_count += 1
+                # Track latest ingested_at for high water mark (from first record)
+                if records and records[0]["ingested_at"]:
+                    ingested_at = records[0]["ingested_at"]
+                    if latest_ingested_at is None or ingested_at > latest_ingested_at:
+                        latest_ingested_at = ingested_at
 
                 # Write batch when it reaches the configured size
                 if len(batch) >= self.settings.pipeline.batch_size:
@@ -499,12 +681,14 @@ class IcebergExtractor:
             if latest_ingested_at:
                 self.high_water_mark.set(latest_ingested_at)
 
-            logger.info(f"Extraction complete: {total_count} documents to Iceberg")
+            logger.info(
+                f"Extraction complete: {doc_count} documents -> {total_records} records to Iceberg"
+            )
 
         finally:
             self.disconnect()
 
-        return total_count
+        return total_records
 
     def full_extract(self) -> int:
         """

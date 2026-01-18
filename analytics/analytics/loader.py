@@ -47,7 +47,12 @@ CREATE TABLE IF NOT EXISTS raw.conversations (
     source_file VARCHAR,
 
     -- Partitioning (derived)
-    date DATE
+    date DATE,
+
+    -- Tool-specific fields (for tool_use and tool_result records)
+    tool_name VARCHAR,
+    tool_id VARCHAR,
+    tool_use_id VARCHAR
 );
 """
 
@@ -57,6 +62,7 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_conversations_date ON raw.conversations(date);",
     "CREATE INDEX IF NOT EXISTS idx_conversations_type ON raw.conversations(type);",
     "CREATE INDEX IF NOT EXISTS idx_conversations_timestamp ON raw.conversations(timestamp);",
+    "CREATE INDEX IF NOT EXISTS idx_conversations_tool_name ON raw.conversations(tool_name);",
 ]
 
 COUNT_ROWS = "SELECT COUNT(*) FROM raw.conversations;"
@@ -279,7 +285,10 @@ class DuckDBLoader:
             message_content,
             message_raw,
             source_file,
-            date
+            date,
+            tool_name,
+            tool_id,
+            tool_use_id
         FROM iceberg_scan('{latest_metadata}')
         ON CONFLICT (_id) DO UPDATE SET
             type = EXCLUDED.type,
@@ -292,7 +301,10 @@ class DuckDBLoader:
             message_content = EXCLUDED.message_content,
             message_raw = EXCLUDED.message_raw,
             source_file = EXCLUDED.source_file,
-            date = EXCLUDED.date;
+            date = EXCLUDED.date,
+            tool_name = EXCLUDED.tool_name,
+            tool_id = EXCLUDED.tool_id,
+            tool_use_id = EXCLUDED.tool_use_id;
         """
 
         self.conn.execute(load_sql)

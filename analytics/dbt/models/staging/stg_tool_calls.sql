@@ -1,6 +1,6 @@
 -- Staging model for tool calls
 -- Extracts tool_use and tool_result entries
--- Parses tool name and basic parameters
+-- Uses the tool_name field populated during extraction
 
 {{
     config(
@@ -25,7 +25,12 @@ tool_entries as (
         message_content,
         message_raw,
         content_length,
-        source_file
+        source_file,
+
+        -- Tool-specific fields from extraction
+        tool_name,
+        tool_id,
+        tool_use_id
 
     from conversations
     where is_tool_related = true
@@ -40,26 +45,13 @@ parsed_tools as (
         partition_date,
         entry_type,
 
-        -- Extract tool name from message_content or message_raw
-        -- Common patterns: "Tool: ToolName" or tool invocation syntax
-        case
-            when message_content like '%Read%' then 'Read'
-            when message_content like '%Write%' then 'Write'
-            when message_content like '%Edit%' then 'Edit'
-            when message_content like '%Bash%' then 'Bash'
-            when message_content like '%Glob%' then 'Glob'
-            when message_content like '%Grep%' then 'Grep'
-            when message_content like '%Task%' then 'Task'
-            when message_content like '%TodoRead%' then 'TodoRead'
-            when message_content like '%TodoWrite%' then 'TodoWrite'
-            when message_content like '%WebFetch%' then 'WebFetch'
-            when message_content like '%WebSearch%' then 'WebSearch'
-            when message_content like '%NotebookEdit%' then 'NotebookEdit'
-            when message_content like '%MultiEdit%' then 'MultiEdit'
-            when message_content like '%AskFollowupQuestion%' then 'AskFollowupQuestion'
-            when message_content like '%AttemptCompletion%' then 'AttemptCompletion'
-            else 'unknown'
-        end as tool_name,
+        -- Tool name is now directly available from extraction
+        -- For tool_result records, we need to look up the tool name via tool_use_id
+        coalesce(tool_name, 'unknown') as tool_name,
+
+        -- Tool identifiers for pairing invocations with results
+        tool_id,
+        tool_use_id,
 
         -- Is this a tool invocation or result?
         entry_type = 'tool_use' as is_invocation,

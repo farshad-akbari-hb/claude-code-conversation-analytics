@@ -72,3 +72,12 @@ sources:
             description: "Date partition key (derived from timestamp)"
             tests:
               - not_null
+
+          - name: tool_name
+            description: "Name of the tool (for tool_use records): Read, Write, Edit, Bash, etc."
+
+          - name: tool_id
+            description: "Unique ID of the tool invocation (for tool_use records)"
+
+          - name: tool_use_id
+            description: "Reference to the tool_use ID (for tool_result records, to pair with invocation)"
